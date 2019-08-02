@@ -87,19 +87,11 @@ fn t4<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
 }
 
 fn t<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
-    let res = if let Ok((expr, rest)) = t1(ts) {
-        Ok((expr, rest))
-    } else if let Ok((expr, rest)) = t2(ts) {
-        Ok((expr, rest))
-    } else if let Ok((expr, rest)) = t3(ts) {
-        Ok((expr, rest))
-    } else if let Ok((expr, rest)) = t4(ts) {
-        Ok((expr, rest))
-    } else {
-        Err("bad t")
-    };
-
-    res
+    t1(ts)
+        .or_else(|_| {t2(ts)})
+        .or_else(|_| {t3(ts)})
+        .or_else(|_| {t4(ts)})
+        .or(Err("bad t"))
 }
 
 fn s1<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
@@ -116,13 +108,9 @@ fn s2<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
 }
 
 fn s<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
-    if let Ok((expr, rest)) = s1(ts) {
-        Ok((expr, rest))
-    } else if let Ok((expr, rest)) = s2(ts) {
-        Ok((expr, rest))
-    } else {
-        Err("bad s")
-    }
+    s1(ts)
+        .or_else(|_| {s2(ts)})
+        .or(Err("bad s"))
 }
 
 fn e<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
