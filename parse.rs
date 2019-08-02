@@ -143,50 +143,53 @@ fn eval(e: &Expr) -> i32 {
     }
 }
 
-fn write_amd64_prologue(w: &mut Write) {
-    w.write(b"
+fn write_amd64_prologue(w: &mut Write) -> std::io::Result<()> {
+    w.write_all(b"
 global _calcmain
 
 section .text
 _calcmain:
 push rbp
 mov rbp, rsp
-    ");
+    ")?;
+    Ok(())
 }
 
-fn write_amd64_epilogue(w: &mut Write) {
-    w.write(b"
+fn write_amd64_epilogue(w: &mut Write) -> std::io::Result<()> {
+    w.write_all(b"
 leave
 ret
-    ");
+    ")?;
+    Ok(())
 }
 
-fn write_amd64(e: &Expr, env: &CodegenEnv, w: &mut Write) {
+fn write_amd64(e: &Expr, env: &CodegenEnv, w: &mut Write) -> std::io::Result<()> {
     match *e {
         Expr::Number(i) => {
-            writeln!(w, "mov rax, {}", i);
-            w.write(b"push rax\n");
+            writeln!(w, "mov rax, {}", i)?;
+            w.write_all(b"push rax\n")?;
         },
         Expr::Plus(ref l, ref r) => {
-            write_amd64(l, env, w);
-            write_amd64(r, env, w);
-            w.write(b"pop rax\n");
-            w.write(b"pop rdi\n");
-            w.write(b"add rax, rdi\n");
-            w.write(b"push rax\n");
+            write_amd64(l, env, w)?;
+            write_amd64(r, env, w)?;
+            w.write_all(b"pop rax\n")?;
+            w.write_all(b"pop rdi\n")?;
+            w.write_all(b"add rax, rdi\n")?;
+            w.write_all(b"push rax\n")?;
         },
         Expr::Times(ref l, ref r) => {
-            write_amd64(l, env, w);
-            write_amd64(r, env, w);
-            w.write(b"pop rax\n");
-            w.write(b"pop rdi\n");
-            w.write(b"mul rdi\n");
-            w.write(b"push rax\n");
+            write_amd64(l, env, w)?;
+            write_amd64(r, env, w)?;
+            w.write_all(b"pop rax\n")?;
+            w.write_all(b"pop rdi\n")?;
+            w.write_all(b"mul rdi\n")?;
+            w.write_all(b"push rax\n")?;
         }
     }
+    Ok(())
 }
 
-fn main() {
+fn main() -> std::io::Result<()> {
     let tokenized_input = [
         Token(TokenClass::LParen, "("),
         Token(TokenClass::Number, "1"),
@@ -206,14 +209,17 @@ fn main() {
         let created = File::create("out.asm");
         match created {
             Ok(mut outfile) => {
-                write_amd64_prologue(&mut outfile);
-                write_amd64(&e, &CodegenEnv(), &mut outfile);
-                write_amd64_epilogue(&mut outfile);
+                // TODO: better error handling
+                write_amd64_prologue(&mut outfile)?;
+                write_amd64(&e, &CodegenEnv(), &mut outfile)?;
+                write_amd64_epilogue(&mut outfile)?;
             },
             _ => {
                 println!("Could not create output file");
             }
         }
     }
+
+    Ok(())
 
 }
