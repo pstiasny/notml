@@ -8,6 +8,7 @@ enum TokenClass {
     Times,
     LParen,
     RParen,
+    WS,
     EOF,
 }
 
@@ -33,6 +34,38 @@ impl Expr {
     fn times(l: Expr, r: Expr) -> Expr {
         Expr::Times(Box::new(l), Box::new(r))
     }
+}
+
+fn lex(input: &str) -> Vec<Token> {
+    let mut prev_tclass = TokenClass::WS;
+    let mut i_start = 0;
+    let mut tokenized_input = Vec::new();
+    for (i, chr) in input.char_indices() {
+        let tclass = match chr {
+            '(' => TokenClass::LParen,
+            ')' => TokenClass::RParen,
+            '+' => TokenClass::Plus,
+            '*' => TokenClass::Times,
+            '0'..='9' => TokenClass::Number,
+            ' ' => TokenClass::WS,
+            _ => {
+                println!("bad char {} at {}", chr, i);
+                TokenClass::EOF
+            }
+        };
+
+        if (tclass != prev_tclass) && (i > 0) {
+            tokenized_input.push(
+                Token(prev_tclass, &input[i_start..i]));
+            i_start = i;
+        }
+
+        prev_tclass = tclass;
+    }
+    tokenized_input.push(Token(prev_tclass, &input[i_start..]));
+    tokenized_input.push(Token(TokenClass::EOF, ""));
+
+    tokenized_input
 }
 
 // Grammar:
@@ -178,16 +211,11 @@ fn write_amd64(e: &Expr, env: &CodegenEnv, w: &mut Write) -> std::io::Result<()>
 }
 
 fn main() -> std::io::Result<()> {
-    let tokenized_input = [
-        Token(TokenClass::LParen, "("),
-        Token(TokenClass::Number, "1"),
-        Token(TokenClass::Plus, "+"),
-        Token(TokenClass::Number, "1"),
-        Token(TokenClass::RParen, ")"),
-        Token(TokenClass::Times, "*"),
-        Token(TokenClass::Number, "2"),
-        Token(TokenClass::EOF, "")
-    ];
+    let input = "(1 + 1) * 2 + 10";
+
+    let mut tokenized_input = lex(input);
+    tokenized_input.retain(|tok| tok.0 != TokenClass::WS);
+    println!("Tokens: {:?}", tokenized_input);
 
     let res = parse(&tokenized_input);
     println!("Parse: {:?}", res);

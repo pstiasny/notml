@@ -5,8 +5,10 @@ out: out.o commonmain.o
 out.o: out.asm
 	nasm -f macho64 -o out.o out.asm
 
-out.asm: parse.rs
-	rustc parse.rs -o parse
+parse: parse.rs
+	rustc --deny warnings parse.rs -o parse
+
+out.asm: parse
 	./parse
 
 commonmain.o: commonmain.c
