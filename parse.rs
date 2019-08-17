@@ -478,16 +478,8 @@ fn main() -> std::io::Result<()> {
     if let Ok(e) = res {
         println!("Eval: {:?}", eval(&e));
 
-        let created = File::create("out.asm");
-        match created {
-            Ok(mut outfile) => {
-                // TODO: better error handling
-                write_amd64(&e, &CodegenEnv::new(), &mut outfile)?;
-            },
-            _ => {
-                println!("Could not create output file");
-            }
-        }
+        let mut outfile = File::create("out.asm")?;
+        write_amd64(&e, &CodegenEnv::new(), &mut outfile)?;
     }
 
     Ok(())
