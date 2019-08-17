@@ -1,0 +1,4 @@
+one = 1;
+double x = x * 2;
+double_then_add x y = (double x + x) + y;
+main = double_then_add (one) 10;
