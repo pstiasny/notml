@@ -1,3 +1,5 @@
+#![deny(warnings)]
+
 use std::io::prelude::*;
 use std::io::{self, Read};
 use std::fs::File;
