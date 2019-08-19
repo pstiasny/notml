@@ -5,7 +5,7 @@ extern crate compiler;
 use std::io::{self, Read};
 use std::fs::File;
 
-use compiler::lexer::{TokenClass, lex};
+use compiler::lexer::{lex, trim_ws};
 use compiler::parser::parse;
 use compiler::codegen::{CodegenEnv, write_amd64};
 use compiler::interpreter::eval;
@@ -16,7 +16,7 @@ fn main() -> std::io::Result<()> {
     io::stdin().read_to_string(&mut input)?;
 
     let mut tokenized_input = lex(&input);
-    tokenized_input.retain(|tok| tok.0 != TokenClass::WS);
+    trim_ws(&mut tokenized_input);
     println!("Tokens: {:?}", tokenized_input);
 
     let res = parse(&tokenized_input);
@@ -29,5 +29,4 @@ fn main() -> std::io::Result<()> {
     }
 
     Ok(())
-
 }

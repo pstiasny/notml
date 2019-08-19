@@ -12,7 +12,7 @@ pub enum TokenClass {
     EOF,
 }
 
-#[derive(Debug)]
+#[derive(Debug,PartialEq)]
 pub struct Token<'a>(pub TokenClass, pub &'a str);
 
 pub fn lex(input: &str) -> Vec<Token> {
@@ -51,4 +51,49 @@ pub fn lex(input: &str) -> Vec<Token> {
     tokenized_input.push(Token(TokenClass::EOF, ""));
 
     tokenized_input
+}
+
+pub fn trim_ws(ts: &mut Vec<Token>) {
+    ts.retain(|tok| tok.0 != TokenClass::WS);
+}
+
+
+#[cfg(test)]
+mod test {
+    use super::{Token, TokenClass, lex};
+
+    #[test]
+    fn sequence() {
+        assert_eq!(lex("seq=(foo bar 1234+4 + 5*90);"), vec![
+            Token(TokenClass::Symbol, "seq"),
+            Token(TokenClass::Assign, "="),
+            Token(TokenClass::LParen, "("),
+            Token(TokenClass::Symbol, "foo"),
+            Token(TokenClass::WS, " "),
+            Token(TokenClass::Symbol, "bar"),
+            Token(TokenClass::WS, " "),
+            Token(TokenClass::Number, "1234"),
+            Token(TokenClass::Plus, "+"),
+            Token(TokenClass::Number, "4"),
+            Token(TokenClass::WS, " "),
+            Token(TokenClass::Plus, "+"),
+            Token(TokenClass::WS, " "),
+            Token(TokenClass::Number, "5"),
+            Token(TokenClass::Times, "*"),
+            Token(TokenClass::Number, "90"),
+            Token(TokenClass::RParen, ")"),
+            Token(TokenClass::Semicolon, ";"),
+            Token(TokenClass::EOF, ""),
+        ]);
+    }
+
+    #[test]
+    fn weird() {
+        assert_eq!(lex("***+++;;;"), vec![
+            Token(TokenClass::Times, "***"),
+            Token(TokenClass::Plus, "+++"),
+            Token(TokenClass::Semicolon, ";;;"),
+            Token(TokenClass::EOF, ""),
+        ]);
+    }
 }

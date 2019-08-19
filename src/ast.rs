@@ -1,7 +1,7 @@
 use std::collections::LinkedList;
 
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Expr {
     Number(i32),
     Plus(Box<Expr>, Box<Expr>),
@@ -20,22 +20,32 @@ impl Expr {
     pub fn times(l: Expr, r: Expr) -> Expr {
         Expr::Times(Box::new(l), Box::new(r))
     }
-    pub fn call(name: String, args: Vec<Expr>) -> Expr {
-        Expr::Call(name, args)
+    pub fn call(name: &str, args: Vec<Expr>) -> Expr {
+        Expr::Call(name.to_string(), args)
     }
-    pub fn var(name: String) -> Expr {
-        Expr::Var(name)
+    pub fn var(name: &str) -> Expr {
+        Expr::Var(name.to_string())
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct FunDefinition {
     pub fname: String,
     pub arg_names: Vec<String>,
     pub code: Box<Expr>,
 }
 
-#[derive(Debug)]
+impl FunDefinition {
+    pub fn new(fname: &str, arg_names: Vec<String>, code: Expr) -> FunDefinition {
+        FunDefinition {
+            fname: fname.to_string(),
+            arg_names: arg_names,
+            code: Box::new(code),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
 pub struct Program(LinkedList<FunDefinition>);
 
 impl Program {
@@ -50,5 +60,8 @@ impl Program {
     }
     pub fn definitions(&self) -> &LinkedList<FunDefinition> {
         &self.0
+    }
+    pub fn definitions_vec(&self) -> Vec<&FunDefinition> {
+        self.0.iter().collect()
     }
 }

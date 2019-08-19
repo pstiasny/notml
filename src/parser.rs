@@ -53,9 +53,9 @@ fn c<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
     let (fname, rest) = token(ts, TokenClass::Symbol)?;
     let (args, rest) = many(&s, rest)?;
     if args.len() == 0 {
-        Ok((Expr::var(fname.to_string()), rest))
+        Ok((Expr::var(fname), rest))
     } else {
-        Ok((Expr::call(fname.to_string(), args), rest))
+        Ok((Expr::call(fname, args), rest))
     }
 }
 
@@ -130,11 +130,7 @@ fn d<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, FunDefinition> {
     let (_, rest) = token(rest, TokenClass::Assign)?;
     let (expr, rest) = s(rest)?;
 
-    let fd = FunDefinition {
-        fname: sym.to_string(),
-        arg_names: args,
-        code: Box::new(expr),
-    };
+    let fd = FunDefinition::new(sym, args, expr);
     Ok((fd, rest))
 }
 
@@ -159,4 +155,122 @@ fn e2<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Program>  {
 
 pub fn parse(ts: &[Token]) -> Result<Program, &'static str> {
     e(ts).map(|(expr, _)| expr)
+}
+
+
+#[cfg(test)]
+mod test {
+    use crate::lexer::{lex, trim_ws};
+    use crate::ast::{Program, FunDefinition, Expr};
+    use super::parse;
+
+    fn parse_str(s: &str) -> Program {
+        let mut toks = lex(s);
+        trim_ws(&mut toks);
+        parse(&toks).unwrap()
+    }
+
+    #[test]
+    fn parses() {
+        assert_eq!(parse_str("constant = 1;").definitions_vec(), vec![
+            &FunDefinition::new("constant", vec![], Expr::number(1)),
+        ]);
+
+        assert_eq!(parse_str("fa = 1; fb = 2;").definitions_vec(), vec![
+            &FunDefinition::new("fa", vec![], Expr::number(1)),
+            &FunDefinition::new("fb", vec![], Expr::number(2)),
+        ]);
+
+        assert_eq!(parse_str("f = 1 + 2 * 3;").definitions_vec(), vec![
+            &FunDefinition::new(
+                "f",
+                vec![],
+                Expr::plus(
+                    Expr::number(1),
+                    Expr::times(Expr::number(2), Expr::number(3)))),
+        ]);
+
+        assert_eq!(parse_str("f = 1 * 2 + 3;").definitions_vec(), vec![
+            &FunDefinition::new(
+                "f",
+                vec![],
+                Expr::plus(
+                    Expr::times(Expr::number(1), Expr::number(2)),
+                    Expr::number(3))),
+        ]);
+
+        assert_eq!(parse_str("f = (1 + 2) * 3;").definitions_vec(), vec![
+            &FunDefinition::new(
+                "f",
+                vec![],
+                Expr::times(
+                    Expr::plus(Expr::number(1), Expr::number(2)),
+                    Expr::number(3))),
+        ]);
+
+        assert_eq!(parse_str("f = 1 * (2 + 3);").definitions_vec(), vec![
+            &FunDefinition::new(
+                "f",
+                vec![],
+                Expr::times(
+                    Expr::number(1),
+                    Expr::plus(Expr::number(2), Expr::number(3)))),
+        ]);
+
+        assert_eq!(parse_str("f x y = 2 * x + y;").definitions_vec(), vec![
+            &FunDefinition::new(
+                "f",
+                vec!["x".to_string(), "y".to_string()],
+                Expr::plus(
+                    Expr::times(Expr::number(2), Expr::var("x")),
+                    Expr::var("y"))),
+        ]);
+
+        assert_eq!(parse_str("main = fone x + 1;").definitions_vec(), vec![
+            &FunDefinition::new(
+                "main",
+                vec![],
+                Expr::call(
+                    "fone",
+                    vec![Expr::plus(Expr::var("x"), Expr::number(1))])),
+        ]);
+
+        assert_eq!(parse_str("main = (fone x) + 1;").definitions_vec(), vec![
+            &FunDefinition::new(
+                "main",
+                vec![],
+                Expr::plus(
+                    Expr::call("fone", vec![Expr::var("x")]),
+                    Expr::number(1))),
+        ]);
+
+        assert_eq!(parse_str("main = ftwo 1 + 2 3;").definitions_vec(), vec![
+            &FunDefinition::new(
+                "main",
+                vec![],
+                Expr::call("ftwo", vec![
+                    Expr::plus(Expr::number(1), Expr::number(2)),
+                    Expr::number(3),
+                ])),
+        ]);
+
+        assert_eq!(parse_str("main = fone fone 1;").definitions_vec(), vec![
+            &FunDefinition::new(
+                "main",
+                vec![],
+                Expr::call("fone", vec![
+                    Expr::call("fone", vec![Expr::number(1)]),
+                ])),
+        ]);
+
+        assert_eq!(parse_str("main = ftwo (one) 2;").definitions_vec(), vec![
+            &FunDefinition::new(
+                "main",
+                vec![],
+                Expr::call("ftwo", vec![
+                    Expr::var("one"),
+                    Expr::number(2),
+                ])),
+        ]);
+    }
 }
