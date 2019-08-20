@@ -5,6 +5,7 @@ use std::collections::LinkedList;
 pub enum Expr {
     Number(i32),
     Plus(Box<Expr>, Box<Expr>),
+    Minus(Box<Expr>, Box<Expr>),
     Times(Box<Expr>, Box<Expr>),
     Call(String, Vec<Expr>),
     Var(String),
@@ -17,6 +18,9 @@ impl Expr {
     }
     pub fn plus(l: Expr, r: Expr) -> Expr {
         Expr::Plus(Box::new(l), Box::new(r))
+    }
+    pub fn minus(l: Expr, r: Expr) -> Expr {
+        Expr::Minus(Box::new(l), Box::new(r))
     }
     pub fn times(l: Expr, r: Expr) -> Expr {
         Expr::Times(Box::new(l), Box::new(r))

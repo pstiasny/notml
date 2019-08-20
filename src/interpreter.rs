@@ -53,6 +53,8 @@ fn eval_expr<'a>(e: &'a Expr, env: &'a EvalEnv<'a>) -> Result<i32, &'static str>
         Expr::Number(i) => Ok(i),
         Expr::Plus(ref l, ref r) =>
             Ok(eval_expr(l, env)? + eval_expr(r, env)?),
+        Expr::Minus(ref l, ref r) =>
+            Ok(eval_expr(l, env)? - eval_expr(r, env)?),
         Expr::Times(ref l, ref r) =>
             Ok(eval_expr(l, env)? * eval_expr(r, env)?),
         Expr::Call(ref name, ref args) => {

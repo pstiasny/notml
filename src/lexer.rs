@@ -4,6 +4,7 @@ pub enum TokenClass {
     Symbol,
     Assign,
     Plus,
+    Minus,
     Times,
     LParen,
     RParen,
@@ -36,6 +37,7 @@ fn transitions(state: u8, chr: Option<char>) -> &'static [u8] {
                 '(' => &[5],
                 ')' => &[6],
                 '+' => &[7],
+                '-' => &[21],
                 '*' => &[8],
                 '0'..='9' => &[9],
                 ';' => &[10],
@@ -84,6 +86,7 @@ fn accepting(state: u8) -> &'static Option<TokenClass> {
         12 => &Some(TokenClass::If),
         16 => &Some(TokenClass::Then),
         20 => &Some(TokenClass::Else),
+        21 => &Some(TokenClass::Minus),
         100 => &Some(TokenClass::Symbol),
         _ => &None,
     }
@@ -145,7 +148,7 @@ mod test {
 
     #[test]
     fn sequence() {
-        assert_eq!(lex("seq=(foo bar 1234+4 + 5*90);"), Ok(vec![
+        assert_eq!(lex("seq=(foo bar 1234+4 +- 5*90);"), Ok(vec![
             Token(TokenClass::Symbol, "seq"),
             Token(TokenClass::Assign, "="),
             Token(TokenClass::LParen, "("),
@@ -158,6 +161,7 @@ mod test {
             Token(TokenClass::Number, "4"),
             Token(TokenClass::WS, " "),
             Token(TokenClass::Plus, "+"),
+            Token(TokenClass::Minus, "-"),
             Token(TokenClass::WS, " "),
             Token(TokenClass::Number, "5"),
             Token(TokenClass::Times, "*"),

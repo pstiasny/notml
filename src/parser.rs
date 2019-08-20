@@ -4,7 +4,7 @@ use crate::ast::*;
 // Grammar:
 // E -> D ; E | eof
 // D -> sym sym* = S
-// S -> Q | T + T | T
+// S -> Q | T + T | T - T | T
 // Q -> if S then S else S
 // T -> ( S ) * T | ( S ) | U * T | U
 // U -> number | C
@@ -114,6 +114,14 @@ fn s2<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
 }
 
 fn s3<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
+    let (expr1, rest) = t(ts)?;
+    let (_, rest) = token(rest, TokenClass::Minus)?;
+    let (expr2, rest) = t(rest)?;
+    let expr = Expr::minus(expr1, expr2);
+    Ok((expr, rest))
+}
+
+fn s4<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
     let expr = t(ts);
     expr
 }
@@ -122,6 +130,7 @@ fn s<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
     s1(ts)
         .or_else(|_| {s2(ts)})
         .or_else(|_| {s3(ts)})
+        .or_else(|_| {s4(ts)})
         .or(Err("bad s"))
 }
 
@@ -196,6 +205,42 @@ mod test {
         assert_eq!(parse_str("fa = 1; fb = 2;").definitions_vec(), vec![
             &FunDefinition::new("fa", vec![], Expr::number(1)),
             &FunDefinition::new("fb", vec![], Expr::number(2)),
+        ]);
+
+        assert_eq!(parse_str("f = 1 - 2 * 3;").definitions_vec(), vec![
+            &FunDefinition::new(
+                "f",
+                vec![],
+                Expr::minus(
+                    Expr::number(1),
+                    Expr::times(Expr::number(2), Expr::number(3)))),
+        ]);
+
+        assert_eq!(parse_str("f = 1 * 2 - 3;").definitions_vec(), vec![
+            &FunDefinition::new(
+                "f",
+                vec![],
+                Expr::minus(
+                    Expr::times(Expr::number(1), Expr::number(2)),
+                    Expr::number(3))),
+        ]);
+
+        assert_eq!(parse_str("f = (1 - 2) * 3;").definitions_vec(), vec![
+            &FunDefinition::new(
+                "f",
+                vec![],
+                Expr::times(
+                    Expr::minus(Expr::number(1), Expr::number(2)),
+                    Expr::number(3))),
+        ]);
+
+        assert_eq!(parse_str("f = 1 * (2 - 3);").definitions_vec(), vec![
+            &FunDefinition::new(
+                "f",
+                vec![],
+                Expr::times(
+                    Expr::number(1),
+                    Expr::minus(Expr::number(2), Expr::number(3)))),
         ]);
 
         assert_eq!(parse_str("f = 1 + 2 * 3;").definitions_vec(), vec![

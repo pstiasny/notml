@@ -51,6 +51,14 @@ fn write_expr_amd64(e: &Expr, env: &CodegenEnv, w: &mut Write) -> std::io::Resul
             w.write_all(b"add rax, rdi\n")?;
             w.write_all(b"push rax\n")?;
         },
+        Expr::Minus(ref l, ref r) => {
+            write_expr_amd64(l, env, w)?;
+            write_expr_amd64(r, env, w)?;
+            w.write_all(b"pop rdi\n")?;
+            w.write_all(b"pop rax\n")?;
+            w.write_all(b"sub rax, rdi\n")?;
+            w.write_all(b"push rax\n")?;
+        },
         Expr::Times(ref l, ref r) => {
             write_expr_amd64(l, env, w)?;
             write_expr_amd64(r, env, w)?;
