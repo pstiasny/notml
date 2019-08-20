@@ -165,7 +165,7 @@ mod test {
     use super::parse;
 
     fn parse_str(s: &str) -> Program {
-        let mut toks = lex(s);
+        let mut toks = lex(s).unwrap();
         trim_ws(&mut toks);
         parse(&toks).unwrap()
     }

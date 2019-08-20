@@ -15,17 +15,19 @@ fn main() -> std::io::Result<()> {
     let mut input = String::new();
     io::stdin().read_to_string(&mut input)?;
 
-    let mut tokenized_input = lex(&input);
-    trim_ws(&mut tokenized_input);
-    println!("Tokens: {:?}", tokenized_input);
+    let lex_result = lex(&input);
+    println!("Tokens: {:?}", lex_result);
+    if let Ok(mut tokenized_input) = lex_result {
+        trim_ws(&mut tokenized_input);
 
-    let res = parse(&tokenized_input);
-    println!("Parse: {:#?}", res);
-    if let Ok(e) = res {
-        println!("Eval: {:?}", eval(&e));
+        let res = parse(&tokenized_input);
+        println!("Parse: {:#?}", res);
+        if let Ok(e) = res {
+            println!("Eval: {:?}", eval(&e));
 
-        let mut outfile = File::create("out.asm")?;
-        write_amd64(&e, &CodegenEnv::new(), &mut outfile)?;
+            let mut outfile = File::create("out.asm")?;
+            write_amd64(&e, &CodegenEnv::new(), &mut outfile)?;
+        }
     }
 
     Ok(())
