@@ -1,4 +1,4 @@
-#[derive(Debug,PartialEq)]
+#[derive(Clone, Hash, Debug, Eq, PartialEq)]
 pub enum TokenClass {
     Number,
     Symbol,
@@ -12,44 +12,116 @@ pub enum TokenClass {
     EOF,
 }
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct Token<'a>(pub TokenClass, pub &'a str);
 
-pub fn lex(input: &str) -> Result<Vec<Token>, String> {
-    let mut prev_tclass = TokenClass::WS;
-    let mut i_start = 0;
-    let mut tokenized_input = Vec::new();
-    for (i, chr) in input.char_indices() {
-        let tclass = match chr {
-            '(' => TokenClass::LParen,
-            ')' => TokenClass::RParen,
-            '+' => TokenClass::Plus,
-            '*' => TokenClass::Times,
-            '0'..='9' => TokenClass::Number,
-            'a'..='z' => TokenClass::Symbol,
-            'A'..='Z' => TokenClass::Symbol,
-            '_' => TokenClass::Symbol,
-            '=' => TokenClass::Assign,
-            ';' => TokenClass::Semicolon,
-            ' ' => TokenClass::WS,
-            '\n' => TokenClass::WS,
-            _ => {
-                return Err(format!("bad char {} at {}", chr, i));
-            }
-        };
-
-        if (tclass != prev_tclass) && (i > 0) {
-            tokenized_input.push(
-                Token(prev_tclass, &input[i_start..i]));
-            i_start = i;
+fn transitions(state: u8, chr: Option<char>) -> &'static [u8] {
+    match chr {
+        None => match state {
+            0 => &[3],
+            _ => &[],
         }
 
-        prev_tclass = tclass;
-    }
-    tokenized_input.push(Token(prev_tclass, &input[i_start..]));
-    tokenized_input.push(Token(TokenClass::EOF, ""));
+        Some(c) => match state {
+            0 => match c {
+                'a'..='z' => &[1],
+                'A'..='Z' => &[1],
+                '_' => &[1],
+                ' ' => &[2],
+                '\n' => &[2],
+                '=' => &[4],
+                '(' => &[5],
+                ')' => &[6],
+                '+' => &[7],
+                '*' => &[8],
+                '0'..='9' => &[9],
+                ';' => &[10],
+                _ => &[],
+            },
 
-    Ok(tokenized_input)
+            1 => match c {
+                'a'..='z' => &[1],
+                'A'..='Z' => &[1],
+                '_' => &[1],
+                _ => &[],
+            }
+
+            2 => match c {
+                ' ' => &[2],
+                '\n' => &[2],
+                _ => &[],
+            },
+
+            9 => match c {
+                '0'..='9' => &[9],
+                _ => &[],
+            }
+
+            _ => &[]
+        }
+    }
+}
+
+fn accepting(state: u8) -> &'static Option<TokenClass> {
+    match state {
+        0 => &None,
+        1 => &Some(TokenClass::Symbol),
+        2 => &Some(TokenClass::WS),
+        3 => &Some(TokenClass::EOF),
+        4 => &Some(TokenClass::Assign),
+        5 => &Some(TokenClass::LParen),
+        6 => &Some(TokenClass::RParen),
+        7 => &Some(TokenClass::Plus),
+        8 => &Some(TokenClass::Times),
+        9 => &Some(TokenClass::Number),
+        10 => &Some(TokenClass::Semicolon),
+        _ => &None,
+    }
+}
+
+pub fn lex(input: &str) -> Result<Vec<Token>, String> {
+    let mut tokenized_input = Vec::new();
+    let mut ac: Vec<TokenClass> = Vec::new();
+    let mut states: Vec<u8> = vec![0];
+    let mut i = input.chars();
+
+    let mut chr = i.next();
+    let mut pos_start = 0;
+    let mut pos = 0;
+
+    loop {
+        states = states.iter()
+            .flat_map(|&state| transitions(state, chr).iter())
+            .cloned()
+            .collect();
+        states.sort();
+        states.dedup();
+
+        if states.is_empty() {
+            if let Some(tc) = ac.iter().cloned().next() {
+                if tc == TokenClass::EOF {
+                    tokenized_input.push(Token(tc, ""));
+                    return Ok(tokenized_input)
+                }
+
+                tokenized_input.push(Token(tc, &input[pos_start..pos]));
+
+                ac.clear();
+                states.clear();
+                states.push(0);
+                pos_start = pos;
+            } else {
+                return Err(format!("unexpected character {:?} at pos {}", chr, pos));
+            }
+        } else {
+            ac = states.iter()
+                .flat_map(|&state| accepting(state).iter())
+                .cloned()
+                .collect();
+            chr = i.next();
+            pos += 1;
+        }
+    }
 }
 
 pub fn trim_ws(ts: &mut Vec<Token>) {
@@ -89,9 +161,15 @@ mod test {
     #[test]
     fn weird() {
         assert_eq!(lex("***+++;;;"), Ok(vec![
-            Token(TokenClass::Times, "***"),
-            Token(TokenClass::Plus, "+++"),
-            Token(TokenClass::Semicolon, ";;;"),
+            Token(TokenClass::Times, "*"),
+            Token(TokenClass::Times, "*"),
+            Token(TokenClass::Times, "*"),
+            Token(TokenClass::Plus, "+"),
+            Token(TokenClass::Plus, "+"),
+            Token(TokenClass::Plus, "+"),
+            Token(TokenClass::Semicolon, ";"),
+            Token(TokenClass::Semicolon, ";"),
+            Token(TokenClass::Semicolon, ";"),
             Token(TokenClass::EOF, ""),
         ]));
     }
