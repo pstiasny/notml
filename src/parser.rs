@@ -4,7 +4,8 @@ use crate::ast::*;
 // Grammar:
 // E -> D ; E | eof
 // D -> sym sym* = S
-// S -> T + T | T
+// S -> Q | T + T | T
+// Q -> if S then S else S
 // T -> ( S ) * T | ( S ) | U * T | U
 // U -> number | C
 // C -> sym S*
@@ -101,6 +102,10 @@ fn t<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
 }
 
 fn s1<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
+    q(ts)
+}
+
+fn s2<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
     let (expr1, rest) = t(ts)?;
     let (_, rest) = token(rest, TokenClass::Plus)?;
     let (expr2, rest) = t(rest)?;
@@ -108,7 +113,7 @@ fn s1<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
     Ok((expr, rest))
 }
 
-fn s2<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
+fn s3<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
     let expr = t(ts);
     expr
 }
@@ -116,7 +121,19 @@ fn s2<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
 fn s<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
     s1(ts)
         .or_else(|_| {s2(ts)})
+        .or_else(|_| {s3(ts)})
         .or(Err("bad s"))
+}
+
+fn q<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
+    let (_, rest) = token(ts, TokenClass::If)?;
+    let (expr1, rest) = s(rest)?;
+    let (_, rest) = token(rest, TokenClass::Then)?;
+    let (expr2, rest) = s(rest)?;
+    let (_, rest) = token(rest, TokenClass::Else)?;
+    let (expr3, rest) = s(rest)?;
+    let expr = Expr::cond(expr1, expr2, expr3);
+    Ok((expr, rest))
 }
 
 fn d<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, FunDefinition> {
@@ -271,6 +288,19 @@ mod test {
                     Expr::var("one"),
                     Expr::number(2),
                 ])),
+        ]);
+
+        assert_eq!(parse_str("main = if p then x else y + 3;").definitions_vec(), vec![
+            &FunDefinition::new(
+                "main",
+                vec![],
+                Expr::cond(
+                    Expr::var("p"),
+                    Expr::var("x"),
+                    Expr::plus(
+                        Expr::var("y"),
+                        Expr::number(3))
+                )),
         ]);
     }
 }

@@ -7,6 +7,9 @@ pub enum TokenClass {
     Times,
     LParen,
     RParen,
+    If,
+    Then,
+    Else,
     Semicolon,
     WS,
     EOF,
@@ -24,11 +27,11 @@ fn transitions(state: u8, chr: Option<char>) -> &'static [u8] {
 
         Some(c) => match state {
             0 => match c {
-                'a'..='z' => &[1],
-                'A'..='Z' => &[1],
-                '_' => &[1],
-                ' ' => &[2],
-                '\n' => &[2],
+                'i' => &[100, 11],
+                't' => &[100, 13],
+                'e' => &[100, 17],
+                'a'..='z'| 'A'..='Z' | '_' => &[100],
+                ' ' | '\n' => &[2],
                 '=' => &[4],
                 '(' => &[5],
                 ')' => &[6],
@@ -39,21 +42,25 @@ fn transitions(state: u8, chr: Option<char>) -> &'static [u8] {
                 _ => &[],
             },
 
-            1 => match c {
-                'a'..='z' => &[1],
-                'A'..='Z' => &[1],
-                '_' => &[1],
+            2 => match c {
+                ' ' | '\n' => &[2],
                 _ => &[],
             }
 
-            2 => match c {
-                ' ' => &[2],
-                '\n' => &[2],
-                _ => &[],
-            },
+            9 => match c { '0'..='9' => &[9], _ => &[], }
 
-            9 => match c {
-                '0'..='9' => &[9],
+            11 => match c { 'f' => &[12], _ => &[], }
+
+            13 => match c { 'h' => &[14], _ => &[], }
+            14 => match c { 'e' => &[15], _ => &[], }
+            15 => match c { 'n' => &[16], _ => &[], }
+
+            17 => match c { 'l' => &[18], _ => &[], }
+            18 => match c { 's' => &[19], _ => &[], }
+            19 => match c { 'e' => &[20], _ => &[], }
+
+            100 => match c {
+                'a'..='z'| 'A'..='Z' | '_' => &[100],
                 _ => &[],
             }
 
@@ -65,7 +72,6 @@ fn transitions(state: u8, chr: Option<char>) -> &'static [u8] {
 fn accepting(state: u8) -> &'static Option<TokenClass> {
     match state {
         0 => &None,
-        1 => &Some(TokenClass::Symbol),
         2 => &Some(TokenClass::WS),
         3 => &Some(TokenClass::EOF),
         4 => &Some(TokenClass::Assign),
@@ -75,6 +81,10 @@ fn accepting(state: u8) -> &'static Option<TokenClass> {
         8 => &Some(TokenClass::Times),
         9 => &Some(TokenClass::Number),
         10 => &Some(TokenClass::Semicolon),
+        12 => &Some(TokenClass::If),
+        16 => &Some(TokenClass::Then),
+        20 => &Some(TokenClass::Else),
+        100 => &Some(TokenClass::Symbol),
         _ => &None,
     }
 }
@@ -154,6 +164,21 @@ mod test {
             Token(TokenClass::Number, "90"),
             Token(TokenClass::RParen, ")"),
             Token(TokenClass::Semicolon, ";"),
+            Token(TokenClass::EOF, ""),
+        ]));
+
+        assert_eq!(lex("if iff then thenn else elsee"), Ok(vec![
+            Token(TokenClass::If, "if"),
+            Token(TokenClass::WS, " "),
+            Token(TokenClass::Symbol, "iff"),
+            Token(TokenClass::WS, " "),
+            Token(TokenClass::Then, "then"),
+            Token(TokenClass::WS, " "),
+            Token(TokenClass::Symbol, "thenn"),
+            Token(TokenClass::WS, " "),
+            Token(TokenClass::Else, "else"),
+            Token(TokenClass::WS, " "),
+            Token(TokenClass::Symbol, "elsee"),
             Token(TokenClass::EOF, ""),
         ]));
     }

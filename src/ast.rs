@@ -8,6 +8,7 @@ pub enum Expr {
     Times(Box<Expr>, Box<Expr>),
     Call(String, Vec<Expr>),
     Var(String),
+    Cond(Box<Expr>, Box<Expr>, Box<Expr>),
 }
 
 impl Expr {
@@ -25,6 +26,9 @@ impl Expr {
     }
     pub fn var(name: &str) -> Expr {
         Expr::Var(name.to_string())
+    }
+    pub fn cond(c: Expr, cons: Expr, alt: Expr) -> Expr {
+        Expr::Cond(Box::new(c), Box::new(cons), Box::new(alt))
     }
 }
 

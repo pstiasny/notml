@@ -66,6 +66,9 @@ fn eval_expr<'a>(e: &'a Expr, env: &'a EvalEnv<'a>) -> Result<i32, &'static str>
                 None => eval_call(name, &Vec::new(), &env)
             }
         }
+        Expr::Cond(ref _c, ref _cons, ref _alt) => {
+            Err("TODO")
+        }
     }
 }
 

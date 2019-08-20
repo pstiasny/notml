@@ -74,6 +74,9 @@ fn write_expr_amd64(e: &Expr, env: &CodegenEnv, w: &mut Write) -> std::io::Resul
                 }
             }
         }
+        Expr::Cond(ref _c, ref _cons, ref _alt) => {
+            unimplemented!();
+        }
     }
     Ok(())
 }
