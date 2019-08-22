@@ -60,28 +60,16 @@ fn write_expr_amd64(e: &Expr, env: &FunctionEnv, w: &mut Write) -> std::io::Resu
             writeln!(w, "mov rax, {}", i)?;
             w.write_all(b"push rax\n")?;
         },
-        Expr::Plus(ref l, ref r) => {
-            write_expr_amd64(l, env, w)?;
-            write_expr_amd64(r, env, w)?;
-            w.write_all(b"pop rax\n")?;
-            w.write_all(b"pop rdi\n")?;
-            w.write_all(b"add rax, rdi\n")?;
-            w.write_all(b"push rax\n")?;
-        },
-        Expr::Minus(ref l, ref r) => {
+        Expr::BinOp(ref op, ref l, ref r) => {
             write_expr_amd64(l, env, w)?;
             write_expr_amd64(r, env, w)?;
             w.write_all(b"pop rdi\n")?;
             w.write_all(b"pop rax\n")?;
-            w.write_all(b"sub rax, rdi\n")?;
-            w.write_all(b"push rax\n")?;
-        },
-        Expr::Times(ref l, ref r) => {
-            write_expr_amd64(l, env, w)?;
-            write_expr_amd64(r, env, w)?;
-            w.write_all(b"pop rax\n")?;
-            w.write_all(b"pop rdi\n")?;
-            w.write_all(b"mul rdi\n")?;
+            match *op {
+                BinOp::Plus => w.write_all(b"add rax, rdi\n"),
+                BinOp::Minus => w.write_all(b"sub rax, rdi\n"),
+                BinOp::Times => w.write_all(b"mul rdi\n"),
+            }?;
             w.write_all(b"push rax\n")?;
         },
         Expr::Call(ref name, ref args) => {

@@ -51,12 +51,13 @@ fn eval_args<'a>(args: &'a Vec<Expr>, env: &'a EvalEnv<'a>) -> Result<Vec<i32>, 
 fn eval_expr<'a>(e: &'a Expr, env: &'a EvalEnv<'a>) -> Result<i32, &'static str> {
     match *e {
         Expr::Number(i) => Ok(i),
-        Expr::Plus(ref l, ref r) =>
-            Ok(eval_expr(l, env)? + eval_expr(r, env)?),
-        Expr::Minus(ref l, ref r) =>
-            Ok(eval_expr(l, env)? - eval_expr(r, env)?),
-        Expr::Times(ref l, ref r) =>
-            Ok(eval_expr(l, env)? * eval_expr(r, env)?),
+        Expr::BinOp(ref op, ref l, ref r) => {
+            match *op {
+                BinOp::Plus => Ok(eval_expr(l, env)? + eval_expr(r, env)?),
+                BinOp::Minus => Ok(eval_expr(l, env)? - eval_expr(r, env)?),
+                BinOp::Times => Ok(eval_expr(l, env)? * eval_expr(r, env)?),
+            }
+        }
         Expr::Call(ref name, ref args) => {
             let evargs = eval_args(&args, &env)?;
             eval_call(&name, &evargs, &env)

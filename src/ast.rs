@@ -2,11 +2,16 @@ use std::collections::LinkedList;
 
 
 #[derive(Debug, PartialEq)]
+pub enum BinOp {
+    Plus,
+    Minus,
+    Times,
+}
+
+#[derive(Debug, PartialEq)]
 pub enum Expr {
     Number(i32),
-    Plus(Box<Expr>, Box<Expr>),
-    Minus(Box<Expr>, Box<Expr>),
-    Times(Box<Expr>, Box<Expr>),
+    BinOp(BinOp, Box<Expr>, Box<Expr>),
     Call(String, Vec<Expr>),
     Var(String),
     Cond(Box<Expr>, Box<Expr>, Box<Expr>),
@@ -17,13 +22,13 @@ impl Expr {
         Expr::Number(i)
     }
     pub fn plus(l: Expr, r: Expr) -> Expr {
-        Expr::Plus(Box::new(l), Box::new(r))
+        Expr::BinOp(BinOp::Plus, Box::new(l), Box::new(r))
     }
     pub fn minus(l: Expr, r: Expr) -> Expr {
-        Expr::Minus(Box::new(l), Box::new(r))
+        Expr::BinOp(BinOp::Minus, Box::new(l), Box::new(r))
     }
     pub fn times(l: Expr, r: Expr) -> Expr {
-        Expr::Times(Box::new(l), Box::new(r))
+        Expr::BinOp(BinOp::Times, Box::new(l), Box::new(r))
     }
     pub fn call(name: &str, args: Vec<Expr>) -> Expr {
         Expr::Call(name.to_string(), args)
