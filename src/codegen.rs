@@ -1,30 +1,47 @@
+use std::cell::Cell;
 use std::io::prelude::Write;
 use std::collections::HashMap;
 
 use crate::ast::*;
 
 
-pub struct CodegenEnv {
+struct ProgramEnv<'a> {
+    #[allow(dead_code)]
+    program: &'a Program,
+    label_counter: Cell<u32>,
+}
+
+struct FunctionEnv<'a> {
+    program_env: &'a ProgramEnv<'a>,
     local_offsets: HashMap<String, u8>,
 }
 
-impl CodegenEnv {
-    pub fn new() -> CodegenEnv {
-        CodegenEnv { local_offsets: HashMap::new() }
+impl ProgramEnv<'_> {
+    pub fn new(program: &Program) -> ProgramEnv {
+        ProgramEnv {
+            program,
+            label_counter: Cell::new(1),
+        }
     }
 
-    fn frame(&self, arg_names: &Vec<String>) -> CodegenEnv {
+    fn frame(&self, arg_names: &Vec<String>) -> FunctionEnv {
         let mut local_offsets = HashMap::new();
         for (i, arg_name) in arg_names.iter().rev().enumerate() {
             local_offsets.insert(
                 arg_name.to_string(),
                 i as u8 * 8 + 16);
         }
-        CodegenEnv { local_offsets }
+        FunctionEnv { program_env: &self, local_offsets }
+    }
+
+    fn next_label_idx(&self) -> u32 {
+        let i = self.label_counter.get();
+        self.label_counter.set(i+1);
+        i
     }
 }
 
-fn write_call_amd64<'a>(name: &str, args: &'a Vec<Expr>, env: &CodegenEnv, w: &mut Write)
+fn write_call_amd64<'a>(name: &str, args: &'a Vec<Expr>, env: &FunctionEnv, w: &mut Write)
  -> std::io::Result<()> {
     for arg in args {
         write_expr_amd64(arg, env, w)?;
@@ -37,7 +54,7 @@ fn write_call_amd64<'a>(name: &str, args: &'a Vec<Expr>, env: &CodegenEnv, w: &m
     Ok(())
 }
 
-fn write_expr_amd64(e: &Expr, env: &CodegenEnv, w: &mut Write) -> std::io::Result<()> {
+fn write_expr_amd64(e: &Expr, env: &FunctionEnv, w: &mut Write) -> std::io::Result<()> {
     match *e {
         Expr::Number(i) => {
             writeln!(w, "mov rax, {}", i)?;
@@ -82,14 +99,24 @@ fn write_expr_amd64(e: &Expr, env: &CodegenEnv, w: &mut Write) -> std::io::Resul
                 }
             }
         }
-        Expr::Cond(ref _c, ref _cons, ref _alt) => {
-            unimplemented!();
+        Expr::Cond(ref c, ref cons, ref alt) => {
+            let alt_lbl = env.program_env.next_label_idx();
+
+            write_expr_amd64(c, env, w)?;
+            w.write_all(b"pop rax\n")?;
+            w.write_all(b"cmp rax, 0\n")?;
+            writeln!(w, "jl alt{}", alt_lbl)?;
+            write_expr_amd64(cons, env, w)?;
+            writeln!(w, "jmp done{}", alt_lbl)?;
+            writeln!(w, "alt{}:", alt_lbl)?;
+            write_expr_amd64(alt, env, w)?;
+            writeln!(w, "done{}:", alt_lbl)?;
         }
     }
     Ok(())
 }
 
-fn write_function_amd64(d: &FunDefinition, env: &CodegenEnv, mut w: &mut Write) -> std::io::Result<()> {
+fn write_function_amd64(d: &FunDefinition, env: &ProgramEnv, mut w: &mut Write) -> std::io::Result<()> {
     let inner_env = env.frame(&d.arg_names);
 
     writeln!(w, "\n{}:", &d.fname)?;
@@ -102,7 +129,7 @@ fn write_function_amd64(d: &FunDefinition, env: &CodegenEnv, mut w: &mut Write) 
     Ok(())
 }
 
-pub fn write_amd64(p: &Program, env: &CodegenEnv, mut w: &mut Write) -> std::io::Result<()> {
+pub fn write_amd64(p: &Program, mut w: &mut Write) -> std::io::Result<()> {
 
     w.write_all(b"
 global _calcmain
@@ -120,6 +147,7 @@ ret
 
 ")?;
 
+    let env = ProgramEnv::new(&p);
     for d in p.definitions() {
         write_function_amd64(&d, &env, &mut w)?;
     }

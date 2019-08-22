@@ -7,7 +7,7 @@ use std::fs::File;
 
 use compiler::lexer::{lex, trim_ws};
 use compiler::parser::parse;
-use compiler::codegen::{CodegenEnv, write_amd64};
+use compiler::codegen::write_amd64;
 use compiler::interpreter::eval;
 
 
@@ -26,7 +26,7 @@ fn main() -> std::io::Result<()> {
             println!("Eval: {:?}", eval(&e));
 
             let mut outfile = File::create("out.asm")?;
-            write_amd64(&e, &CodegenEnv::new(), &mut outfile)?;
+            write_amd64(&e, &mut outfile)?;
         }
     }
 
