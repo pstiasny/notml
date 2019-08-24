@@ -1,7 +1,8 @@
+use std::collections::HashMap;
 use std::collections::LinkedList;
 
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub enum BinOp {
     Plus,
     Minus,
@@ -56,6 +57,13 @@ impl FunDefinition {
             code: Box::new(code),
         }
     }
+
+    pub fn arg_indexes(&self) -> HashMap<String, u8> {
+        self.arg_names.iter()
+            .enumerate()
+            .map(|(i, arg_name)| (arg_name.to_string(), i as u8))
+            .collect()
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -71,10 +79,27 @@ impl Program {
         l2.append(&mut self.0);
         Program(l2)
     }
+    pub fn define(&mut self, fname: &str, arg_names: Vec<&str>, code: Expr) -> Program {
+        let fd = FunDefinition {
+            fname: fname.to_string(),
+            arg_names: arg_names.iter().map(|&s| s.to_string()).collect(),
+            code: Box::new(code),
+        };
+        self.append(fd)
+    }
     pub fn definitions(&self) -> &LinkedList<FunDefinition> {
         &self.0
     }
     pub fn definitions_vec(&self) -> Vec<&FunDefinition> {
         self.0.iter().collect()
+    }
+    pub fn definitions_hash(&self) -> HashMap<String, &FunDefinition> {
+        let mut functions = HashMap::new();
+
+        for d in self.definitions() {
+            functions.insert(d.fname.to_string(), d);
+        }
+
+        functions
     }
 }

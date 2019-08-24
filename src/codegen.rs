@@ -1,37 +1,28 @@
 use std::cell::Cell;
 use std::io::prelude::Write;
-use std::collections::HashMap;
 
-use crate::ast::*;
+use crate::ast::BinOp;
+use crate::sem::{AProgram, AFun, AExpr};
 
 
-struct ProgramEnv<'a> {
-    #[allow(dead_code)]
-    program: &'a Program,
+struct ProgramEnv {
     label_counter: Cell<u32>,
 }
 
 struct FunctionEnv<'a> {
-    program_env: &'a ProgramEnv<'a>,
-    local_offsets: HashMap<String, u8>,
+    program_env: &'a ProgramEnv,
+    function: &'a AFun,
 }
 
-impl ProgramEnv<'_> {
-    pub fn new(program: &Program) -> ProgramEnv {
+impl ProgramEnv {
+    pub fn new() -> ProgramEnv {
         ProgramEnv {
-            program,
             label_counter: Cell::new(1),
         }
     }
 
-    fn frame(&self, arg_names: &Vec<String>) -> FunctionEnv {
-        let mut local_offsets = HashMap::new();
-        for (i, arg_name) in arg_names.iter().rev().enumerate() {
-            local_offsets.insert(
-                arg_name.to_string(),
-                i as u8 * 8 + 16);
-        }
-        FunctionEnv { program_env: &self, local_offsets }
+    fn frame<'a>(&'a self, function: &'a AFun) -> FunctionEnv<'a> {
+        FunctionEnv { program_env: &self, function }
     }
 
     fn next_label_idx(&self) -> u32 {
@@ -41,7 +32,7 @@ impl ProgramEnv<'_> {
     }
 }
 
-fn write_call_amd64<'a>(name: &str, args: &'a Vec<Expr>, env: &FunctionEnv, w: &mut Write)
+fn write_call_amd64<'a>(name: &str, args: &'a Vec<AExpr>, env: &FunctionEnv, w: &mut Write)
  -> std::io::Result<()> {
     for arg in args {
         write_expr_amd64(arg, env, w)?;
@@ -54,13 +45,13 @@ fn write_call_amd64<'a>(name: &str, args: &'a Vec<Expr>, env: &FunctionEnv, w: &
     Ok(())
 }
 
-fn write_expr_amd64(e: &Expr, env: &FunctionEnv, w: &mut Write) -> std::io::Result<()> {
+fn write_expr_amd64(e: &AExpr, env: &FunctionEnv, w: &mut Write) -> std::io::Result<()> {
     match *e {
-        Expr::Number(i) => {
+        AExpr::Number(i) => {
             writeln!(w, "mov rax, {}", i)?;
             w.write_all(b"push rax\n")?;
         },
-        Expr::BinOp(ref op, ref l, ref r) => {
+        AExpr::BinOp(ref op, ref l, ref r) => {
             write_expr_amd64(l, env, w)?;
             write_expr_amd64(r, env, w)?;
             w.write_all(b"pop rdi\n")?;
@@ -72,22 +63,15 @@ fn write_expr_amd64(e: &Expr, env: &FunctionEnv, w: &mut Write) -> std::io::Resu
             }?;
             w.write_all(b"push rax\n")?;
         },
-        Expr::Call(ref name, ref args) => {
+        AExpr::Call(ref name, ref args) => {
             write_call_amd64(name, args, env, w)?;
         }
-        Expr::Var(ref name) => {
-            match env.local_offsets.get(name) {
-                Some(ptr) => {
-                    writeln!(w, "mov rax, [rbp+{}]", ptr)?;
-                    w.write_all(b"push rax\n")?;
-                }
-                None => {
-                    // glbobal constant treated as nullary function call
-                    write_call_amd64(name, &Vec::new(), &env, w)?;
-                }
-            }
+        AExpr::Arg(idx) => {
+            let offset = 16 + (env.function.arity() - idx - 1) * 8;
+            writeln!(w, "mov rax, [rbp+{}]", offset)?;
+            w.write_all(b"push rax\n")?;
         }
-        Expr::Cond(ref c, ref cons, ref alt) => {
+        AExpr::Cond(ref c, ref cons, ref alt) => {
             let alt_lbl = env.program_env.next_label_idx();
 
             write_expr_amd64(c, env, w)?;
@@ -104,20 +88,20 @@ fn write_expr_amd64(e: &Expr, env: &FunctionEnv, w: &mut Write) -> std::io::Resu
     Ok(())
 }
 
-fn write_function_amd64(d: &FunDefinition, env: &ProgramEnv, mut w: &mut Write) -> std::io::Result<()> {
-    let inner_env = env.frame(&d.arg_names);
+fn write_function_amd64(d: &AFun, env: &ProgramEnv, mut w: &mut Write) -> std::io::Result<()> {
+    let inner_env = env.frame(&d);
 
-    writeln!(w, "\n{}:", &d.fname)?;
+    writeln!(w, "\n{}:", &d.name())?;
     w.write_all(b"push rbp\n")?;
     w.write_all(b"mov rbp, rsp\n")?;
-    write_expr_amd64(&d.code, &inner_env, &mut w)?;
+    write_expr_amd64(&d.code(), &inner_env, &mut w)?;
     w.write_all(b"pop rax\n")?;
     w.write_all(b"pop rbp\n")?;
     w.write_all(b"ret\n")?;
     Ok(())
 }
 
-pub fn write_amd64(p: &Program, mut w: &mut Write) -> std::io::Result<()> {
+pub fn write_amd64(p: &AProgram, mut w: &mut Write) -> std::io::Result<()> {
 
     w.write_all(b"
 global _calcmain
@@ -135,8 +119,8 @@ ret
 
 ")?;
 
-    let env = ProgramEnv::new(&p);
-    for d in p.definitions() {
+    let env = ProgramEnv::new();
+    for d in p.values() {
         write_function_amd64(&d, &env, &mut w)?;
     }
     Ok(())

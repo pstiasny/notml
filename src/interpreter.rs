@@ -79,19 +79,8 @@ fn eval_expr<'a>(e: &'a Expr, env: &'a EvalEnv<'a>) -> Result<i32, &'static str>
     }
 }
 
-fn collect_functions<'a>(p: &'a Program) -> HashMap<String, &'a FunDefinition>
-{
-    let mut functions = HashMap::new();
-
-    for d in p.definitions() {
-        functions.insert(d.fname.to_string(), d);
-    }
-
-    functions
-}
-
 pub fn eval(p: &Program) -> Result<i32, &'static str> {
-    let functions = collect_functions(p);
+    let functions = p.definitions_hash();
     let env = EvalEnv::new(&functions);
 
     eval_call("main", &Vec::new(), &env)
