@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::ast::{BinOp, Expr, Program};
+use crate::ast::{BinOp, FunDefinition, Expr, Program};
 
 
 #[derive(Debug, PartialEq)]
@@ -58,38 +58,38 @@ pub fn acond(cond: AExpr, cons: AExpr, alt: AExpr) -> AExpr {
     AExpr::Cond(Box::new(cond), Box::new(cons), Box::new(alt))
 }
 
-fn annotate_expr(args: &HashMap<String, u8>, e: &Expr) -> Result<AExpr, String> {
-    let aexpr = match e {
-        Expr::Number(i) => AExpr::Number(*i),
-        Expr::BinOp(o, l, r) => abinop(
+fn annotate_expr(p: &HashMap<String, &FunDefinition>, args: &HashMap<String, u8>, e: &Expr) -> Result<AExpr, String> {
+    match e {
+        Expr::Number(i) => Ok(anumber(*i)),
+        Expr::BinOp(o, l, r) => Ok(abinop(
             *o,
-            annotate_expr(&args, l)?,
-            annotate_expr(&args, r)?),
+            annotate_expr(&p, &args, l)?,
+            annotate_expr(&p, &args, r)?)),
         Expr::Call(fname, callargs) => {
             let acallargs: Result<Vec<AExpr>, String> = callargs.iter()
-                .map(|e| annotate_expr(&args, &e))
+                .map(|e| annotate_expr(&p, &args, &e))
                 .collect();
-            acall(fname, acallargs?)
+            let fd = p.get(fname).ok_or(format!("Undefined function: {}", fname))?;
+            Ok(acall(&fd.fname, acallargs?))
         },
         Expr::Var(s) => {
-            return args.get(s)
-                .map(|&n| aarg(n))
-                .or_else(|| Some(acall(s, vec![])))  // TODO: check function call
-                .ok_or(format!("Undefined symbol: {}", s))
+            args.get(s).map(|&n| aarg(n))
+            .or_else(|| p.get(s).map(|&fd| acall(&fd.fname, vec![])))
+            .ok_or(format!("Undefined symbol: {}", s))
         },
-        Expr::Cond(c, cons, alt) => acond(
-            annotate_expr(&args, c)?,
-            annotate_expr(&args, cons)?,
-            annotate_expr(&args, alt)?)
-    };
-    Ok(aexpr)
+        Expr::Cond(c, cons, alt) => Ok(acond(
+            annotate_expr(&p, &args, c)?,
+            annotate_expr(&p, &args, cons)?,
+            annotate_expr(&p, &args, alt)?))
+    }
 }
 
 pub fn annotate(p: &Program) -> Result<AProgram, String> {
+    let fdmap = p.definitions_hash();
     p.definitions().iter()
         .map(|f| {
             let args = f.arg_indexes();
-            let ae = annotate_expr(&args, &f.code)?;
+            let ae = annotate_expr(&fdmap, &args, &f.code)?;
             Ok((f.fname.clone(), AFun(f.fname.clone(), f.arg_names.len() as u8, ae)))
         })
         .collect()
@@ -170,6 +170,23 @@ mod test {
                     afun("x", 0, anumber(1)),
                 ])
             )
+        );
+    }
+
+    #[test]
+    fn undefined() {
+        assert_eq!(
+            annotate(
+                &Program::new()
+                .define("main", vec![], Expr::var("x"))),
+            Err("Undefined symbol: x".to_string())
+        );
+
+        assert_eq!(
+            annotate(
+                &Program::new()
+                .define("main", vec![], Expr::call("f", vec![Expr::number(1)]))),
+            Err("Undefined function: f".to_string())
         );
     }
 }
