@@ -1,5 +1,6 @@
 use std::cell::Cell;
 use std::io::prelude::Write;
+use std::rc::Rc;
 
 use crate::ast::BinOp;
 use crate::sem::{AProgram, AFun, AExpr};
@@ -32,7 +33,7 @@ impl ProgramEnv {
     }
 }
 
-fn write_call_amd64<'a>(name: &str, args: &'a Vec<AExpr>, env: &FunctionEnv, w: &mut Write)
+fn write_call_amd64<'a>(name: &str, args: &'a Vec<Rc<AExpr>>, env: &FunctionEnv, w: &mut Write)
  -> std::io::Result<()> {
     for arg in args {
         write_expr_amd64(arg, env, w)?;
