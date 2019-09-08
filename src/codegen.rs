@@ -33,16 +33,37 @@ impl ProgramEnv {
     }
 }
 
-fn write_call_amd64<'a>(name: &str, args: &'a Vec<Rc<AExpr>>, env: &FunctionEnv, w: &mut Write)
- -> std::io::Result<()> {
+fn arg_offset_to_rbp(arity: u8, idx: u8) -> u8 {
+    16 + (arity - idx - 1) * 8
+}
+
+fn write_call_amd64<'a>(
+    name: &str,
+    args: &'a Vec<Rc<AExpr>>,
+    tail: bool,
+    env: &FunctionEnv,
+    w: &mut Write
+) -> std::io::Result<()> {
     for arg in args {
         write_expr_amd64(arg, env, w)?;
     }
-    writeln!(w, "call {}", &name)?;
-    if args.len() > 0 {
-        writeln!(w, "add rsp, {}", 8 * args.len())?;
+
+    if tail {
+        for idx in (0 .. args.len()).rev() {
+            writeln!(w, "pop rax")?;
+            let offset = arg_offset_to_rbp(env.function.arity(), idx as u8);
+            writeln!(w, "mov [rbp+{}], rax", offset)?;
+        }
+        writeln!(w, "mov rsp, rbp")?;
+        writeln!(w, "jmp {}_body", &name)?;
+    } else {
+        writeln!(w, "call {}", &name)?;
+        if args.len() > 0 {
+            writeln!(w, "add rsp, {}", 8 * args.len())?;
+        }
+        w.write_all(b"push rax\n")?;
     }
-    w.write_all(b"push rax\n")?;
+
     Ok(())
 }
 
@@ -64,11 +85,11 @@ fn write_expr_amd64(e: &AExpr, env: &FunctionEnv, w: &mut Write) -> std::io::Res
             }?;
             w.write_all(b"push rax\n")?;
         },
-        AExpr::Call(ref name, ref args) => {
-            write_call_amd64(name, args, env, w)?;
+        AExpr::Call(ref name, ref args, ref tail) => {
+            write_call_amd64(name, args, *tail, env, w)?;
         }
         AExpr::Arg(idx) => {
-            let offset = 16 + (env.function.arity() - idx - 1) * 8;
+            let offset = arg_offset_to_rbp(env.function.arity(), idx);
             writeln!(w, "mov rax, [rbp+{}]", offset)?;
             w.write_all(b"push rax\n")?;
         }
@@ -95,6 +116,7 @@ fn write_function_amd64(d: &AFun, env: &ProgramEnv, mut w: &mut Write) -> std::i
     writeln!(w, "\n{}:", &d.name())?;
     w.write_all(b"push rbp\n")?;
     w.write_all(b"mov rbp, rsp\n")?;
+    writeln!(w, "{}_body:", &d.name())?;
     write_expr_amd64(&d.code(), &inner_env, &mut w)?;
     w.write_all(b"pop rax\n")?;
     w.write_all(b"pop rbp\n")?;

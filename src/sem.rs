@@ -8,7 +8,7 @@ use crate::ast::{BinOp, FunDefinition, Expr, Program};
 pub enum AExpr {
     Number(i32),
     BinOp(BinOp, Rc<AExpr>, Rc<AExpr>),
-    Call(String, Vec<Rc<AExpr>>),
+    Call(String, Vec<Rc<AExpr>>, bool),
     Arg(u8),
     Cond(Rc<AExpr>, Rc<AExpr>, Rc<AExpr>),
 }
@@ -55,8 +55,8 @@ pub fn anumber(i: i32) -> Rc<AExpr> {
     Rc::new(AExpr::Number(i))
 }
 
-pub fn acall(fname: &str, args: Vec<Rc<AExpr>>) -> Rc<AExpr> {
-    Rc::new(AExpr::Call(fname.to_string(), args))
+pub fn acall(fname: &str, args: Vec<Rc<AExpr>>, tail: bool) -> Rc<AExpr> {
+    Rc::new(AExpr::Call(fname.to_string(), args, tail))
 }
 
 pub fn abinop(op: BinOp, l: Rc<AExpr>, r: Rc<AExpr>) -> Rc<AExpr> {
@@ -83,11 +83,11 @@ fn annotate_expr(
                 .map(|e| annotate_expr(&p, &args, &e))
                 .collect();
             let fd = p.get(fname).ok_or(format!("Undefined function: {}", fname))?;
-            Ok(acall(&fd.fname, acallargs?))
+            Ok(acall(&fd.fname, acallargs?, false))
         },
         Expr::Var(s) => {
             args.get(s).map(|&n| aarg(n))
-            .or_else(|| p.get(s).map(|&fd| acall(&fd.fname, vec![])))
+            .or_else(|| p.get(s).map(|&fd| acall(&fd.fname, vec![], false)))
             .ok_or(format!("Undefined symbol: {}", s))
         },
         Expr::Cond(c, cons, alt) => Ok(acond(
@@ -107,12 +107,12 @@ fn map_expr(
             *op,
             f(Rc::clone(l))?,
             f(Rc::clone(r))?),
-        AExpr::Call(ref name, ref args) => {
+        AExpr::Call(ref name, ref args, ref tail) => {
             let argsm: Result<Vec<Rc<AExpr>>, String> = args
                 .iter().cloned()
                 .map(f)
                 .collect();
-            acall(&name, argsm?)
+            acall(&name, argsm?, *tail)
         }
         AExpr::Arg(_) => e,
         AExpr::Cond(ref c, ref cons, ref alt) => acond(
@@ -132,10 +132,20 @@ fn traverse(
     Ok(node)
 }
 
+fn map_program_functions(
+    f: &dyn Fn(&AProgram, &AFun, Rc<AExpr>) -> Result<Rc<AExpr>, String>,
+    p: AProgram
+) -> Result<AProgram, String> {
+    let funs: Vec<Rc<AFun>> = p.iter()
+        .map(|(_, af)| (&af).try_map(&|root| f(&p, &af, Rc::clone(&root))))
+        .collect::<Result<Vec<Rc<AFun>>, String>>()?;
+    Ok(aprogram(funs))
+}
+
 fn check_calls(p: AProgram) -> Result<AProgram, String> {
     fn f(p: &AProgram, aexpr: Rc<AExpr>) -> Result<Rc<AExpr>, String> {
         match *aexpr {
-            AExpr::Call(ref fname, ref args) => {
+            AExpr::Call(ref fname, ref args, _) => {
                 let fd = p.get(fname).ok_or("undefined function")?;
 
                 if fd.arity() == args.len() as u8 {
@@ -149,10 +159,9 @@ fn check_calls(p: AProgram) -> Result<AProgram, String> {
             _ => Ok(aexpr)
         }
     }
-    let funs: Vec<Rc<AFun>> = p.iter()
-        .map(|(_, af)| (&af).try_map(&|root| traverse(&|x| f(&p, x), root)))
-        .collect::<Result<Vec<Rc<AFun>>, String>>()?;
-    Ok(aprogram(funs))
+    map_program_functions(
+        &|p, _, root| traverse(&|x| f(&p, x), root),
+        p)
 }
 
 fn check_main(p: &AProgram) -> Result<(), String> {
@@ -169,6 +178,27 @@ fn check_main(p: &AProgram) -> Result<(), String> {
     Ok(())
 }
 
+fn replace_tailcalls(p: AProgram) -> Result<AProgram, String> {
+    fn rec(p: &AProgram, f: &AFun, e: Rc<AExpr>) -> Result<Rc<AExpr>, String> {
+        let res = match *e {
+            AExpr::Call(ref fname, ref args, _) => {
+                if fname == f.name() {
+                    acall(fname, (*args).iter().cloned().collect(), true)
+                } else {
+                    e
+                }
+            },
+            AExpr::Cond(ref c, ref cons, ref alt) => acond(
+                Rc::clone(c),
+                rec(p, f, Rc::clone(cons))?,
+                rec(p, f, Rc::clone(alt))?),
+            _ => e
+        };
+        Ok(res)
+    }
+    map_program_functions(&rec, p)
+}
+
 pub fn annotate(p: &Program) -> Result<AProgram, String> {
     let fdmap = p.definitions_hash();
     let mut ap: AProgram = p.definitions().iter()
@@ -182,14 +212,15 @@ pub fn annotate(p: &Program) -> Result<AProgram, String> {
 
     ap = check_calls(ap)?;
     check_main(&ap)?;
+    ap = replace_tailcalls(ap)?;
 
     Ok(ap)
 }
 
 #[cfg(test)]
 mod test {
-    use crate::ast::{Program, Expr};
-    use super::{annotate, aprogram, afun, aarg, acall, anumber};
+    use crate::ast::{Program, Expr, BinOp};
+    use super::{annotate, aprogram, afun, aarg, abinop, acall, acond, anumber};
 
     #[test]
     fn simple() {
@@ -216,7 +247,7 @@ mod test {
             ),
             Ok(
                 aprogram(vec![
-                    afun("f", 2, acall("f", vec![aarg(1), aarg(0)])),
+                    afun("f", 2, acall("f", vec![aarg(1), aarg(0)], true)),
                     afun("main", 0, anumber(1))
                 ])
             )
@@ -238,9 +269,9 @@ mod test {
                         "f",
                         2,
                         acall("f", vec![
-                            acall("y", vec![]),
+                            acall("y", vec![], false),
                             aarg(0),
-                        ])),
+                        ], true)),
                     afun("y", 0, anumber(1)),
                     afun("main", 0, anumber(1)),
                 ])
@@ -262,7 +293,7 @@ mod test {
                     afun(
                         "f",
                         1,
-                        acall("f", vec![aarg(0)])),
+                        acall("f", vec![aarg(0)], true)),
                     afun("x", 0, anumber(1)),
                     afun("main", 0, anumber(1)),
                 ])
@@ -345,5 +376,94 @@ mod test {
                 .define("main", vec!["x"], Expr::number(0))),
             Err("main function must take no arguments".to_string())
         );
+    }
+
+    #[test]
+    fn tail_calls() {
+        let ap = annotate(
+            &Program::new()
+            .define("main", vec![], Expr::number(0))
+            .define("f", vec!["x"],
+                    Expr::call("f", vec![Expr::var("x")]))
+            .define("g", vec!["x"],
+                    Expr::cond(
+                        Expr::call("g", vec![Expr::number(1)]),
+                        Expr::call("g", vec![Expr::number(2)]),
+                        Expr::call("g", vec![Expr::number(3)])))
+            .define("h", vec!["x"],
+                    Expr::cond(
+                        Expr::number(1),
+                        Expr::plus(
+                            Expr::number(2),
+                            Expr::call("h", vec![Expr::number(3)])),
+                        Expr::plus(
+                            Expr::number(4),
+                            Expr::call("h", vec![Expr::number(5)]))))
+            .define("i", vec!["x"],
+                    Expr::plus(
+                        Expr::call("i", vec![Expr::number(1)]),
+                        Expr::call("i", vec![Expr::number(2)])))
+            .define("j", vec!["x"],
+                    Expr::call("j", vec![
+                        Expr::call("j", vec![Expr::number(2)])
+                    ]))
+            .define("k", vec!["x"],
+                    Expr::call("k", vec![
+                        Expr::plus(
+                            Expr::number(1),
+                            Expr::call("k", vec![Expr::number(2)]))
+                    ]))
+        ).unwrap();
+
+        assert_eq!(
+            ap.get("f"),
+            Some(&afun("f", 1, acall("f", vec![aarg(0)], true))));
+
+        assert_eq!(
+            ap.get("g"),
+            Some(&afun("g", 1, acond(
+                acall("g", vec![anumber(1)], false),
+                acall("g", vec![anumber(2)], true),
+                acall("g", vec![anumber(3)], true)))));
+
+        assert_eq!(
+            ap.get("h"),
+            Some(&afun("h", 1, acond(
+                anumber(1),
+                abinop(
+                    BinOp::Plus,
+                    anumber(2),
+                    acall("h", vec![anumber(3)], false)),
+                abinop(
+                    BinOp::Plus,
+                    anumber(4),
+                    acall("h", vec![anumber(5)], false))))));
+
+        assert_eq!(
+            ap.get("i"),
+            Some(&afun("i", 1,
+                abinop(
+                    BinOp::Plus,
+                    acall("i", vec![anumber(1)], false),
+                    acall("i", vec![anumber(2)], false)))));
+
+        assert_eq!(
+            ap.get("j"),
+            Some(&afun("j", 1,
+                 acall("j",
+                       vec![acall("j", vec![anumber(2)], false)],
+                       true))));
+
+        assert_eq!(
+            ap.get("k"),
+            Some(&afun("k", 1,
+                acall("k",
+                      vec![
+                          abinop(
+                              BinOp::Plus,
+                              anumber(1),
+                              acall("k", vec![anumber(2)], false))
+                      ],
+                      true))));
     }
 }
