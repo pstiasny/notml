@@ -155,6 +155,20 @@ fn check_calls(p: AProgram) -> Result<AProgram, String> {
     Ok(aprogram(funs))
 }
 
+fn check_main(p: &AProgram) -> Result<(), String> {
+    match p.get("main") {
+        None => {
+            return Err("main function must be defined".to_string());
+        }
+        Some(f) => {
+            if f.arity() != 0 {
+                return Err("main function must take no arguments".to_string());
+            }
+        }
+    }
+    Ok(())
+}
+
 pub fn annotate(p: &Program) -> Result<AProgram, String> {
     let fdmap = p.definitions_hash();
     let mut ap: AProgram = p.definitions().iter()
@@ -167,7 +181,7 @@ pub fn annotate(p: &Program) -> Result<AProgram, String> {
         .collect::<Result<AProgram, String>>()?;
 
     ap = check_calls(ap)?;
-    // TODO: check main
+    check_main(&ap)?;
 
     Ok(ap)
 }
@@ -182,10 +196,10 @@ mod test {
         assert_eq!(
             annotate(
                 &Program::new()
-                .define("f", vec![], Expr::number(1))),
+                .define("main", vec![], Expr::number(1))),
             Ok(
                 aprogram(vec![
-                    afun("f", 0, anumber(1))
+                    afun("main", 0, anumber(1))
                 ])
             )
         );
@@ -198,10 +212,12 @@ mod test {
                 &Program::new()
                 .define("f", vec!["x", "y"],
                         Expr::call("f", vec![Expr::var("y"), Expr::var("x")]))
+                .define("main", vec![], Expr::number(1))
             ),
             Ok(
                 aprogram(vec![
-                    afun("f", 2, acall("f", vec![aarg(1), aarg(0)]))
+                    afun("f", 2, acall("f", vec![aarg(1), aarg(0)])),
+                    afun("main", 0, anumber(1))
                 ])
             )
         );
@@ -212,7 +228,8 @@ mod test {
         let p = Program::new()
             .define("f", vec!["x", "z"],
                     Expr::call("f", vec![Expr::var("y"), Expr::var("x")]))
-            .define("y", vec![], Expr::number(1));
+            .define("y", vec![], Expr::number(1))
+            .define("main", vec![], Expr::number(1));
         assert_eq!(
             annotate(&p),
             Ok(
@@ -225,6 +242,7 @@ mod test {
                             aarg(0),
                         ])),
                     afun("y", 0, anumber(1)),
+                    afun("main", 0, anumber(1)),
                 ])
             )
         );
@@ -235,7 +253,8 @@ mod test {
         let p = Program::new()
             .define("f", vec!["x"],
                     Expr::call("f", vec![Expr::var("x")]))
-            .define("x", vec![], Expr::number(1));
+            .define("x", vec![], Expr::number(1))
+            .define("main", vec![], Expr::number(1));
         assert_eq!(
             annotate(&p),
             Ok(
@@ -245,6 +264,7 @@ mod test {
                         1,
                         acall("f", vec![aarg(0)])),
                     afun("x", 0, anumber(1)),
+                    afun("main", 0, anumber(1)),
                 ])
             )
         );
@@ -304,6 +324,26 @@ mod test {
                 .define("f", vec!["x"], Expr::number(0))
                 .define("main", vec![], Expr::var("f"))),
             Err("function f requires 1 arguments, 0 given".to_string())
+        );
+    }
+
+    #[test]
+    fn no_main() {
+        assert_eq!(
+            annotate(
+                &Program::new()
+                .define("f", vec!["x"], Expr::number(0))),
+            Err("main function must be defined".to_string())
+        );
+    }
+
+    #[test]
+    fn bad_main_arity() {
+        assert_eq!(
+            annotate(
+                &Program::new()
+                .define("main", vec!["x"], Expr::number(0))),
+            Err("main function must take no arguments".to_string())
         );
     }
 }
