@@ -127,19 +127,24 @@ fn write_function_amd64(d: &AFun, env: &ProgramEnv, mut w: &mut Write) -> std::i
 pub fn write_amd64(p: &AProgram, mut w: &mut Write) -> std::io::Result<()> {
 
     w.write_all(b"
-global _calcmain
+global _main
+extern _rt_print
 
 section .text
-_calcmain:
+_main:
+
 push rbp
 mov rbp, rsp
 
 call main
 
+mov rdi, rax  ; assign main result to print arg 1
+call _rt_print
 mov rsp, rbp
+
+mov rax, 0  ; exit code
 pop rbp
 ret
-
 ")?;
 
     let env = ProgramEnv::new();

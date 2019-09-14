@@ -4,12 +4,29 @@ extern crate compiler;
 
 use std::io::{self, Read};
 use std::fs::File;
+use std::process::{Command, Stdio, exit};
 
 use compiler::lexer::{lex, trim_ws};
 use compiler::parser::parse;
 use compiler::sem::annotate;
 use compiler::codegen::write_amd64;
 use compiler::interpreter::eval;
+
+
+fn run_cmd(cmd: &str, args: &[&str]) -> std::io::Result<()> {
+    let output = Command::new(cmd)
+        .args(args)
+        .stderr(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .output()?;
+
+    if !output.status.success() {
+        println!("command {} failed", cmd);
+        exit(1);
+    }
+
+    return Ok(());
+}
 
 
 fn main() -> std::io::Result<()> {
@@ -32,9 +49,24 @@ fn main() -> std::io::Result<()> {
 
                 let mut outfile = File::create("out.asm")?;
                 write_amd64(&at, &mut outfile)?;
+
+                run_cmd(
+                    "nasm",
+                    &["-g", "-f", "macho64", "-F", "dwarf", "-o", "out.o", "out.asm"])?;
+
+                run_cmd(
+                    "ar",
+                    &["rcs", "libout.a", "out.o"])?;
+
+                run_cmd(
+                    "rustc",
+                    &["runtime.rs", "-L.", "-lout", "-o", "out"])?;
+
+                println!("done");
+                return Ok(());
             }
         }
     }
 
-    Ok(())
+    exit(1);
 }
