@@ -23,7 +23,7 @@ fn token<'a>(ts: &'a [Token<'a>], expected_tc: TokenClass) -> ParseResult<'a, &'
 }
 
 fn many<'a, T>(
-    f: &Fn(&'a [Token<'a>]) -> ParseResult<'a, T>,
+    f: &dyn Fn(&'a [Token<'a>]) -> ParseResult<'a, T>,
     ts: &'a [Token<'a>]
 ) -> ParseResult<'a, Vec<T>> {
     let mut results = Vec::<T>::new();

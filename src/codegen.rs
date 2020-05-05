@@ -42,7 +42,7 @@ fn write_call_amd64<'a>(
     args: &'a Vec<Rc<AExpr>>,
     tail: bool,
     env: &FunctionEnv,
-    w: &mut Write
+    w: &mut dyn Write
 ) -> std::io::Result<()> {
     for arg in args {
         write_expr_amd64(arg, env, w)?;
@@ -67,7 +67,7 @@ fn write_call_amd64<'a>(
     Ok(())
 }
 
-fn write_expr_amd64(e: &AExpr, env: &FunctionEnv, w: &mut Write) -> std::io::Result<()> {
+fn write_expr_amd64(e: &AExpr, env: &FunctionEnv, w: &mut dyn Write) -> std::io::Result<()> {
     match *e {
         AExpr::Number(i) => {
             writeln!(w, "mov rax, {}", i)?;
@@ -110,7 +110,7 @@ fn write_expr_amd64(e: &AExpr, env: &FunctionEnv, w: &mut Write) -> std::io::Res
     Ok(())
 }
 
-fn write_function_amd64(d: &AFun, env: &ProgramEnv, mut w: &mut Write) -> std::io::Result<()> {
+fn write_function_amd64(d: &AFun, env: &ProgramEnv, mut w: &mut dyn Write) -> std::io::Result<()> {
     let inner_env = env.frame(&d);
 
     writeln!(w, "\n{}:", &d.name())?;
@@ -124,7 +124,7 @@ fn write_function_amd64(d: &AFun, env: &ProgramEnv, mut w: &mut Write) -> std::i
     Ok(())
 }
 
-pub fn write_amd64(p: &AProgram, mut w: &mut Write) -> std::io::Result<()> {
+pub fn write_amd64(p: &AProgram, mut w: &mut dyn Write) -> std::io::Result<()> {
 
     w.write_all(b"
 global _main
