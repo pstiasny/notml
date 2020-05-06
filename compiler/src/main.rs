@@ -29,6 +29,23 @@ fn run_cmd(cmd: &str, args: &[&str]) -> std::io::Result<()> {
 }
 
 
+fn nasm_args<'a>(asm_file: &'a str, object_file: &'a str) -> Vec<&'a str> {
+    return vec![
+        "-g", "-f", "macho64", "-F", "dwarf", "-o", object_file, asm_file,
+    ];
+}
+
+
+fn linker_args<'a>(object_file: &'a str, out_file: &'a str) -> Vec<&'a str> {
+    return vec![
+        "-arch", "x86_64", "-platform_version", "macos", "10.15", "10.15",
+        "-L", "/usr/local/lib", "/usr/lib/libSystem.B.dylib",
+        object_file, "runtime/target/debug/libruntime.a",
+        "-o", out_file,
+    ];
+}
+
+
 fn main() -> std::io::Result<()> {
     let mut input = String::new();
     io::stdin().read_to_string(&mut input)?;
@@ -50,17 +67,8 @@ fn main() -> std::io::Result<()> {
                 let mut outfile = File::create("out.asm")?;
                 write_amd64(&at, &mut outfile)?;
 
-                run_cmd(
-                    "nasm",
-                    &["-g", "-f", "macho64", "-F", "dwarf", "-o", "out.o", "out.asm"])?;
-
-                run_cmd(
-                    "ar",
-                    &["rcs", "libout.a", "out.o"])?;
-
-                run_cmd(
-                    "rustc",
-                    &["runtime.rs", "-L.", "-lout", "-o", "out"])?;
+                run_cmd("nasm", &nasm_args("out.asm", "out.o"))?;
+                run_cmd("ld", &linker_args("out.o", "out"))?;
 
                 println!("done");
                 return Ok(());
