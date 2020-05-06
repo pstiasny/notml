@@ -3,7 +3,7 @@ use std::io::prelude::Write;
 use std::rc::Rc;
 
 use crate::ast::BinOp;
-use crate::sem::{AProgram, AFun, AExpr};
+use crate::sem::{AProgram, AFun, AExpr, CallType};
 
 
 struct ProgramEnv {
@@ -40,7 +40,7 @@ fn arg_offset_to_rbp(arity: u8, idx: u8) -> u8 {
 fn write_call_amd64<'a>(
     name: &str,
     args: &'a Vec<Rc<AExpr>>,
-    tail: bool,
+    call_type: CallType,
     env: &FunctionEnv,
     w: &mut dyn Write
 ) -> std::io::Result<()> {
@@ -48,20 +48,31 @@ fn write_call_amd64<'a>(
         write_expr_amd64(arg, env, w)?;
     }
 
-    if tail {
-        for idx in (0 .. args.len()).rev() {
-            writeln!(w, "pop rax")?;
-            let offset = arg_offset_to_rbp(env.function.arity(), idx as u8);
-            writeln!(w, "mov [rbp+{}], rax", offset)?;
+    match call_type {
+        CallType::Tail => {
+            for idx in (0 .. args.len()).rev() {
+                writeln!(w, "pop rax")?;
+                let offset = arg_offset_to_rbp(env.function.arity(), idx as u8);
+                writeln!(w, "mov [rbp+{}], rax", offset)?;
+            }
+            writeln!(w, "mov rsp, rbp")?;
+            writeln!(w, "jmp {}_body", &name)?;
         }
-        writeln!(w, "mov rsp, rbp")?;
-        writeln!(w, "jmp {}_body", &name)?;
-    } else {
-        writeln!(w, "call {}", &name)?;
-        if args.len() > 0 {
-            writeln!(w, "add rsp, {}", 8 * args.len())?;
+        CallType::Regular => {
+            writeln!(w, "call {}", &name)?;
+            if args.len() > 0 {
+                writeln!(w, "add rsp, {}", 8 * args.len())?;
+            }
+            w.write_all(b"push rax\n")?;
         }
-        w.write_all(b"push rax\n")?;
+        CallType::Native => {
+            if args.len() != 1 {
+                unimplemented!();
+            }
+            writeln!(w, "pop rdi")?;
+            writeln!(w, "call _rt_{}", &name)?;
+            w.write_all(b"push rax\n")?;
+        }
     }
 
     Ok(())
@@ -135,11 +146,7 @@ _main:
 
 push rbp
 mov rbp, rsp
-
 call main
-
-mov rdi, rax  ; assign main result to print arg 1
-call _rt_print
 mov rsp, rbp
 
 mov rax, 0  ; exit code

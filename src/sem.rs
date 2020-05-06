@@ -1,50 +1,70 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use crate::ast::{BinOp, FunDefinition, Expr, Program};
+use crate::ast::{BinOp, Expr, Program};
+
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum CallType {
+    Regular,
+    Tail,
+    Native,
+}
 
 
 #[derive(Debug, PartialEq)]
 pub enum AExpr {
     Number(i32),
     BinOp(BinOp, Rc<AExpr>, Rc<AExpr>),
-    Call(String, Vec<Rc<AExpr>>, bool),
+    Call(String, Vec<Rc<AExpr>>, CallType),
     Arg(u8),
     Cond(Rc<AExpr>, Rc<AExpr>, Rc<AExpr>),
 }
 
 #[derive(Debug, PartialEq)]
-pub struct AFun(String, u8, Rc<AExpr>);
+pub struct AFunSig {
+    name: String,
+    arity: u8,
+    native: bool,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct AFun(Rc<AFunSig>, Rc<AExpr>);
 
 impl AFun {
     pub fn name(&self) -> &String {
-        &self.0
+        &self.0.name
     }
     pub fn arity(&self) -> u8 {
-        self.1
+        self.0.arity
     }
     pub fn code(&self) -> &AExpr {
-        &self.2
+        &self.1
     }
     pub fn map(self, f: &dyn Fn(Rc<AExpr>) -> Rc<AExpr>) -> Self {
-        AFun(self.0, self.1, f(self.2))
+        AFun(Rc::clone(&self.0), f(self.1))
     }
     pub fn try_map<T>(
         &self,
         f: &dyn Fn(Rc<AExpr>) -> Result<Rc<AExpr>, T>
     ) -> Result<Rc<Self>, T> {
-        Ok(Rc::new(AFun(self.0.clone(), self.1, f(Rc::clone(&self.2))?)))
+        Ok(Rc::new(AFun(Rc::clone(&self.0), f(Rc::clone(&self.1))?)))
     }
 }
 
 pub type AProgram = HashMap<String, Rc<AFun>>;
 
 pub fn aprogram(fs: Vec<Rc<AFun>>) -> AProgram {
-    fs.into_iter().map(move |f| (f.0.clone(), Rc::clone(&f))).collect()
+    fs.into_iter().map(move |f| (f.0.name.clone(), Rc::clone(&f))).collect()
 }
 
 pub fn afun(name: &str, arity: u8, code: Rc<AExpr>) -> Rc<AFun> {
-    Rc::new(AFun(name.to_string(), arity, code))
+    let fd = AFunSig {
+        name: name.to_string(),
+        arity,
+        native: false,
+    };
+    Rc::new(AFun(Rc::new(fd), code))
 }
 
 pub fn aarg(i: u8) -> Rc<AExpr> {
@@ -55,8 +75,8 @@ pub fn anumber(i: i32) -> Rc<AExpr> {
     Rc::new(AExpr::Number(i))
 }
 
-pub fn acall(fname: &str, args: Vec<Rc<AExpr>>, tail: bool) -> Rc<AExpr> {
-    Rc::new(AExpr::Call(fname.to_string(), args, tail))
+pub fn acall(fname: &str, args: Vec<Rc<AExpr>>, call_type: CallType) -> Rc<AExpr> {
+    Rc::new(AExpr::Call(fname.to_string(), args, call_type))
 }
 
 pub fn abinop(op: BinOp, l: Rc<AExpr>, r: Rc<AExpr>) -> Rc<AExpr> {
@@ -68,7 +88,7 @@ pub fn acond(cond: Rc<AExpr>, cons: Rc<AExpr>, alt: Rc<AExpr>) -> Rc<AExpr> {
 }
 
 fn annotate_expr(
-    p: &HashMap<String, &FunDefinition>,
+    funs: &HashMap<String, Rc<AFunSig>>,
     args: &HashMap<String, u8>,
     e: &Expr
 ) -> Result<Rc<AExpr>, String> {
@@ -76,24 +96,24 @@ fn annotate_expr(
         Expr::Number(i) => Ok(anumber(*i)),
         Expr::BinOp(o, l, r) => Ok(abinop(
             *o,
-            annotate_expr(&p, &args, l)?,
-            annotate_expr(&p, &args, r)?)),
+            annotate_expr(&funs, &args, l)?,
+            annotate_expr(&funs, &args, r)?)),
         Expr::Call(fname, callargs) => {
             let acallargs: Result<Vec<Rc<AExpr>>, String> = callargs.iter()
-                .map(|e| annotate_expr(&p, &args, &e))
+                .map(|e| annotate_expr(&funs, &args, &e))
                 .collect();
-            let fd = p.get(fname).ok_or(format!("Undefined function: {}", fname))?;
-            Ok(acall(&fd.fname, acallargs?, false))
+            let fd = funs.get(fname).ok_or(format!("Undefined function: {}", fname))?;
+            Ok(acall(&fd.name, acallargs?,  if fd.native {CallType::Native} else {CallType::Regular}))
         },
         Expr::Var(s) => {
             args.get(s).map(|&n| aarg(n))
-            .or_else(|| p.get(s).map(|&fd| acall(&fd.fname, vec![], false)))
+            .or_else(|| funs.get(s).map(|fd| acall(&fd.name, vec![], CallType::Regular)))
             .ok_or(format!("Undefined symbol: {}", s))
         },
         Expr::Cond(c, cons, alt) => Ok(acond(
-            annotate_expr(&p, &args, c)?,
-            annotate_expr(&p, &args, cons)?,
-            annotate_expr(&p, &args, alt)?))
+            annotate_expr(&funs, &args, c)?,
+            annotate_expr(&funs, &args, cons)?,
+            annotate_expr(&funs, &args, alt)?))
     }
 }
 
@@ -142,25 +162,28 @@ fn map_program_functions(
     Ok(aprogram(funs))
 }
 
-fn check_calls(p: AProgram) -> Result<AProgram, String> {
-    fn f(p: &AProgram, aexpr: Rc<AExpr>) -> Result<Rc<AExpr>, String> {
+fn check_calls(
+    funs: &HashMap<String, Rc<AFunSig>>,
+    p: AProgram
+) -> Result<AProgram, String> {
+    fn f(funs: &HashMap<String, Rc<AFunSig>>, aexpr: Rc<AExpr>) -> Result<Rc<AExpr>, String> {
         match *aexpr {
             AExpr::Call(ref fname, ref args, _) => {
-                let fd = p.get(fname).ok_or("undefined function")?;
+                let fd = funs.get(fname).ok_or(format!("Undefined function: {}", fname))?;
 
-                if fd.arity() == args.len() as u8 {
+                if fd.arity == args.len() as u8 {
                     Ok(aexpr)
                 } else {
                     Err(format!(
                         "function {} requires {} arguments, {} given",
-                        fname, fd.arity(), args.len()))
+                        fname, fd.arity, args.len()))
                 }
             },
             _ => Ok(aexpr)
         }
     }
     map_program_functions(
-        &|p, _, root| traverse(&|x| f(&p, x), root),
+        &|_, _, root| traverse(&|x| f(&funs, x), root),
         p)
 }
 
@@ -181,9 +204,9 @@ fn check_main(p: &AProgram) -> Result<(), String> {
 fn replace_tailcalls(p: AProgram) -> Result<AProgram, String> {
     fn rec(p: &AProgram, f: &AFun, e: Rc<AExpr>) -> Result<Rc<AExpr>, String> {
         let res = match *e {
-            AExpr::Call(ref fname, ref args, _) => {
+            AExpr::Call(ref fname, ref args, CallType::Regular) => {
                 if fname == f.name() {
-                    acall(fname, (*args).iter().cloned().collect(), true)
+                    acall(fname, (*args).iter().cloned().collect(), CallType::Tail)
                 } else {
                     e
                 }
@@ -200,17 +223,35 @@ fn replace_tailcalls(p: AProgram) -> Result<AProgram, String> {
 }
 
 pub fn annotate(p: &Program) -> Result<AProgram, String> {
-    let fdmap = p.definitions_hash();
+    let mut funs: HashMap<String, Rc<AFunSig>> = p.definitions().iter()
+        .map(|f| {
+            (
+                f.fname.clone(),
+                Rc::new(AFunSig {
+                    name: f.fname.clone(),
+                    arity: f.arg_names.len() as u8,
+                    native: false
+                })
+            )
+        })
+        .collect();
+
+    // TODO: check for collisions with exisiting definitions
+    funs.insert(
+        "print".to_string(),
+        Rc::new(AFunSig { name: "print".to_string(), arity: 1, native: true }));
+
     let mut ap: AProgram = p.definitions().iter()
         .map(|f| {
             let args = f.arg_indexes();
-            let ae = annotate_expr(&fdmap, &args, &f.code)?;
-            let fun = AFun(f.fname.clone(), f.arg_names.len() as u8, ae);
-            Ok((f.fname.clone(), Rc::new(fun)))
+            let ae = annotate_expr(&funs, &args, &f.code)?;
+            let sig = funs.get(&f.fname).unwrap();
+            let fun = Rc::new(AFun(Rc::clone(sig), ae));
+            Ok((f.fname.clone(), fun))
         })
         .collect::<Result<AProgram, String>>()?;
 
-    ap = check_calls(ap)?;
+    ap = check_calls(&funs, ap)?;
     check_main(&ap)?;
     ap = replace_tailcalls(ap)?;
 
@@ -220,7 +261,7 @@ pub fn annotate(p: &Program) -> Result<AProgram, String> {
 #[cfg(test)]
 mod test {
     use crate::ast::{Program, Expr, BinOp};
-    use super::{annotate, aprogram, afun, aarg, abinop, acall, acond, anumber};
+    use super::{CallType, annotate, aprogram, afun, aarg, abinop, acall, acond, anumber};
 
     #[test]
     fn simple() {
@@ -247,7 +288,7 @@ mod test {
             ),
             Ok(
                 aprogram(vec![
-                    afun("f", 2, acall("f", vec![aarg(1), aarg(0)], true)),
+                    afun("f", 2, acall("f", vec![aarg(1), aarg(0)], CallType::Tail)),
                     afun("main", 0, anumber(1))
                 ])
             )
@@ -269,9 +310,9 @@ mod test {
                         "f",
                         2,
                         acall("f", vec![
-                            acall("y", vec![], false),
+                            acall("y", vec![], CallType::Regular),
                             aarg(0),
-                        ], true)),
+                        ], CallType::Tail)),
                     afun("y", 0, anumber(1)),
                     afun("main", 0, anumber(1)),
                 ])
@@ -293,7 +334,7 @@ mod test {
                     afun(
                         "f",
                         1,
-                        acall("f", vec![aarg(0)], true)),
+                        acall("f", vec![aarg(0)], CallType::Tail)),
                     afun("x", 0, anumber(1)),
                     afun("main", 0, anumber(1)),
                 ])
@@ -417,14 +458,14 @@ mod test {
 
         assert_eq!(
             ap.get("f"),
-            Some(&afun("f", 1, acall("f", vec![aarg(0)], true))));
+            Some(&afun("f", 1, acall("f", vec![aarg(0)], CallType::Tail))));
 
         assert_eq!(
             ap.get("g"),
             Some(&afun("g", 1, acond(
-                acall("g", vec![anumber(1)], false),
-                acall("g", vec![anumber(2)], true),
-                acall("g", vec![anumber(3)], true)))));
+                acall("g", vec![anumber(1)], CallType::Regular),
+                acall("g", vec![anumber(2)], CallType::Tail),
+                acall("g", vec![anumber(3)], CallType::Tail)))));
 
         assert_eq!(
             ap.get("h"),
@@ -433,26 +474,26 @@ mod test {
                 abinop(
                     BinOp::Plus,
                     anumber(2),
-                    acall("h", vec![anumber(3)], false)),
+                    acall("h", vec![anumber(3)], CallType::Regular)),
                 abinop(
                     BinOp::Plus,
                     anumber(4),
-                    acall("h", vec![anumber(5)], false))))));
+                    acall("h", vec![anumber(5)], CallType::Regular))))));
 
         assert_eq!(
             ap.get("i"),
             Some(&afun("i", 1,
                 abinop(
                     BinOp::Plus,
-                    acall("i", vec![anumber(1)], false),
-                    acall("i", vec![anumber(2)], false)))));
+                    acall("i", vec![anumber(1)], CallType::Regular),
+                    acall("i", vec![anumber(2)], CallType::Regular)))));
 
         assert_eq!(
             ap.get("j"),
             Some(&afun("j", 1,
                  acall("j",
-                       vec![acall("j", vec![anumber(2)], false)],
-                       true))));
+                       vec![acall("j", vec![anumber(2)], CallType::Regular)],
+                       CallType::Tail))));
 
         assert_eq!(
             ap.get("k"),
@@ -462,8 +503,25 @@ mod test {
                           abinop(
                               BinOp::Plus,
                               anumber(1),
-                              acall("k", vec![anumber(2)], false))
+                              acall("k", vec![anumber(2)], CallType::Regular))
                       ],
-                      true))));
+                      CallType::Tail))));
+    }
+
+    #[test]
+    fn native_calls() {
+        assert_eq!(
+            annotate(
+                &Program::new()
+                .define("main", vec![],
+                        Expr::call("print", vec![Expr::number(1)]))),
+            Ok(
+                aprogram(vec![
+                    afun("main",
+                         0,
+                         acall("print", vec![anumber(1)], CallType::Native))
+                ])
+            )
+        );
     }
 }
