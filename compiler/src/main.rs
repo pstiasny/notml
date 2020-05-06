@@ -1,10 +1,13 @@
 #![deny(warnings)]
 
 extern crate compiler;
+extern crate toml;
 
 use std::io::{self, Read};
 use std::fs::File;
 use std::process::{Command, Stdio, exit};
+
+use serde::{Deserialize};
 
 use compiler::lexer::{lex, trim_ws};
 use compiler::parser::parse;
@@ -13,7 +16,26 @@ use compiler::codegen::write_amd64;
 use compiler::interpreter::eval;
 
 
-fn run_cmd(cmd: &str, args: &[&str]) -> std::io::Result<()> {
+#[derive(Deserialize)]
+struct AssemblerConfig {
+    nasm_args: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct LinkerConfig {
+    ld_args: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct Config {
+    assembler: AssemblerConfig,
+    linker: LinkerConfig,
+}
+
+
+fn run_cmd(cmd: &str, args: &[String]) -> std::io::Result<()> {
+    println!("{} {:?}", cmd, args);
+
     let output = Command::new(cmd)
         .args(args)
         .stderr(Stdio::inherit())
@@ -29,24 +51,40 @@ fn run_cmd(cmd: &str, args: &[&str]) -> std::io::Result<()> {
 }
 
 
-fn nasm_args<'a>(asm_file: &'a str, object_file: &'a str) -> Vec<&'a str> {
-    return vec![
-        "-g", "-f", "macho64", "-F", "dwarf", "-o", object_file, asm_file,
-    ];
+fn nasm_args<'a>(
+    cfg: &'a Config,
+    asm_file: &'a str,
+    object_file: &'a str
+) -> Vec<String> {
+    let mut args: Vec<String> = Vec::new();
+    args.extend(cfg.assembler.nasm_args.clone());
+    args.push("-o".to_string());
+    args.push(object_file.to_string());
+    args.push(asm_file.to_string());
+    args
 }
 
 
-fn linker_args<'a>(object_file: &'a str, out_file: &'a str) -> Vec<&'a str> {
-    return vec![
-        "-arch", "x86_64", "-platform_version", "macos", "10.15", "10.15",
-        "-L", "/usr/local/lib", "/usr/lib/libSystem.B.dylib",
-        object_file, "runtime/target/debug/libruntime.a",
-        "-o", out_file,
-    ];
+fn linker_args<'a>(
+    cfg: &'a Config,
+    object_file: &'a str,
+    out_file: &'a str
+) -> Vec<String> {
+    let mut args: Vec<String> = Vec::new();
+    args.extend(cfg.linker.ld_args.clone());
+    args.push(object_file.to_string());
+    args.push("-o".to_string());
+    args.push(out_file.to_string());
+    args
 }
 
 
 fn main() -> std::io::Result<()> {
+    let mut config_str = String::new();
+    let mut config_file = File::open("config.toml")?;
+    config_file.read_to_string(&mut config_str)?;
+    let config: Config = toml::from_str(&config_str)?;
+
     let mut input = String::new();
     io::stdin().read_to_string(&mut input)?;
 
@@ -67,8 +105,8 @@ fn main() -> std::io::Result<()> {
                 let mut outfile = File::create("out.asm")?;
                 write_amd64(&at, &mut outfile)?;
 
-                run_cmd("nasm", &nasm_args("out.asm", "out.o"))?;
-                run_cmd("ld", &linker_args("out.o", "out"))?;
+                run_cmd("nasm", &nasm_args(&config, "out.asm", "out.o"))?;
+                run_cmd("ld", &linker_args(&config, "out.o", "out"))?;
 
                 println!("done");
                 return Ok(());
