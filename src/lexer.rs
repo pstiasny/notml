@@ -62,7 +62,7 @@ fn transitions(state: u8, chr: Option<char>) -> &'static [u8] {
             19 => match c { 'e' => &[20], _ => &[], }
 
             100 => match c {
-                'a'..='z'| 'A'..='Z' | '_' => &[100],
+                'a'..='z'| 'A'..='Z' | '0'..='9' | '_' => &[100],
                 _ => &[],
             }
 
@@ -148,13 +148,15 @@ mod test {
 
     #[test]
     fn sequence() {
-        assert_eq!(lex("seq=(foo bar 1234+4 +- 5*90);"), Ok(vec![
+        assert_eq!(lex("seq=(foo bar x1 1234+4 +- 5*90);"), Ok(vec![
             Token(TokenClass::Symbol, "seq"),
             Token(TokenClass::Assign, "="),
             Token(TokenClass::LParen, "("),
             Token(TokenClass::Symbol, "foo"),
             Token(TokenClass::WS, " "),
             Token(TokenClass::Symbol, "bar"),
+            Token(TokenClass::WS, " "),
+            Token(TokenClass::Symbol, "x1"),
             Token(TokenClass::WS, " "),
             Token(TokenClass::Number, "1234"),
             Token(TokenClass::Plus, "+"),
