@@ -11,15 +11,46 @@ use crate::ast::*;
 // V -> ( S ) | number | sym
 // C -> sym V*
 
-type ParseResult<'a, T> = Result<(T, &'a[Token<'a>]), &'static str>;
+#[derive(Debug, PartialEq)]
+pub struct ParseError(String, Position);
+
+type ParseResult<'a, T> = Result<(T, &'a[Token<'a>]), ParseError>;
+
+trait BestError {
+    fn or_backtrack<O: FnOnce() -> Self>(self, op: O) -> Self where Self: std::marker::Sized;
+}
+
+impl<'a, T> BestError for ParseResult<'a, T> {
+    fn or_backtrack<O: FnOnce() -> ParseResult<'a, T>>(
+        self: ParseResult<'a, T>,
+        op: O
+    ) -> ParseResult<'a, T> {
+        self.or_else(|e1| {
+            let result2 = op();
+            match result2 {
+                Ok(x) => Ok(x),
+                Err(e2) => {
+                    if e1.1 < e2.1 { Err(e2) } else { Err(e1) }
+                }
+            }
+        })
+    }
+}
 
 fn token<'a>(ts: &'a [Token<'a>], expected_tc: TokenClass) -> ParseResult<'a, &'a str> {
-    let Token(ref tc, tstr) = ts[0];
+    let Token(ref tc, tstr, pos) = &ts[0];
     if *tc == expected_tc {
         Ok((tstr, &ts[1..]))
     } else {
-        Err("unexpected token")
+        Err(
+            ParseError(
+                format!("unexpected token {} at line {} col {}", &tstr, &pos.0, &pos.1),
+                *pos))
     }
+}
+
+fn position<'a>(ts: &'a [Token<'a>]) -> Position {
+    ts[0].2
 }
 
 fn many<'a, T>(
@@ -47,7 +78,7 @@ fn n<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
     let (i_str, rest) = token(ts, TokenClass::Number)?;
     match i_str.parse::<i32>() {
         Ok(i) => Ok((Expr::number(i), rest)),
-        Err(_) => Err("Invalid integer")
+        Err(_) => Err(ParseError(format!("invalid integer: {:?}", i_str), position(ts))),
     }
 }
 
@@ -62,9 +93,7 @@ fn c<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
 }
 
 fn u<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
-    c(ts)
-        .or_else(|_| {v(ts)})
-        .or(Err("bad u"))
+    c(ts).or_backtrack(|| v(ts))
 }
 
 fn v1<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
@@ -85,8 +114,8 @@ fn v3<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
 
 fn v<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
     v1(ts)
-        .or_else(|_| {v2(ts)})
-        .or_else(|_| {v3(ts)})
+        .or_backtrack(|| {v2(ts)})
+        .or_backtrack(|| {v3(ts)})
 }
 
 fn t1<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
@@ -102,8 +131,7 @@ fn t2<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
 
 fn t<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
     t1(ts)
-        .or_else(|_| {t2(ts)})
-        .or(Err("bad t"))
+        .or_backtrack(|| {t2(ts)})
 }
 
 fn s1<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
@@ -133,10 +161,9 @@ fn s4<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
 
 fn s<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
     s1(ts)
-        .or_else(|_| {s2(ts)})
-        .or_else(|_| {s3(ts)})
-        .or_else(|_| {s4(ts)})
-        .or(Err("bad s"))
+        .or_backtrack(|| s2(ts))
+        .or_backtrack(|| s3(ts))
+        .or_backtrack(|| s4(ts))
 }
 
 fn q<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
@@ -166,9 +193,7 @@ fn d<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, FunDefinition> {
 }
 
 fn e<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Program> {
-    e1(ts)
-        .or_else(|_| {e2(ts)})
-        .or(Err("bad e"))
+    e1(ts).or_backtrack(|| e2(ts))
 }
 
 fn e1<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Program> {
@@ -184,16 +209,16 @@ fn e2<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Program>  {
     Ok((Program::new(), rest))
 }
 
-pub fn parse(ts: &[Token]) -> Result<Program, &'static str> {
+pub fn parse(ts: &[Token]) -> Result<Program, ParseError> {
     e(ts).map(|(expr, _)| expr)
 }
 
 
 #[cfg(test)]
 mod test {
-    use crate::lexer::{lex, trim_ws};
+    use crate::lexer::{Position, lex, trim_ws};
     use crate::ast::{Program, FunDefinition, Expr};
-    use super::parse;
+    use super::{ParseError, parse};
 
     fn parse_str(s: &str) -> Program {
         let mut toks = lex(s).unwrap();
@@ -333,5 +358,17 @@ mod test {
                         Expr::number(3))
                 )),
         ]);
+    }
+
+    #[test]
+    fn parse_error() {
+        let mut toks = lex("foo x = ;").unwrap();
+        trim_ws(&mut toks);
+        assert_eq!(
+            parse(&toks),
+            Err(
+                ParseError(
+                    "unexpected token ; at line 1 col 9".to_string(),
+                    Position(1, 9))));
     }
 }

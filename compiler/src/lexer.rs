@@ -16,8 +16,11 @@ pub enum TokenClass {
     EOF,
 }
 
+#[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Clone, Copy)]
+pub struct Position(pub u64, pub u64);
+
 #[derive(Debug, PartialEq)]
-pub struct Token<'a>(pub TokenClass, pub &'a str);
+pub struct Token<'a>(pub TokenClass, pub &'a str, pub Position);
 
 fn transitions(state: u8, chr: Option<char>) -> &'static [u8] {
     match chr {
@@ -102,6 +105,12 @@ pub fn lex(input: &str) -> Result<Vec<Token>, String> {
     let mut pos_start = 0;
     let mut pos = 0;
 
+    let mut col = 1;
+    let mut col_start = 1;
+    let mut line = 1;
+    let mut line_start = 1;
+    let mut linebreak = false;
+
     loop {
         states = states.iter()
             .flat_map(|&state| transitions(state, chr).iter())
@@ -113,18 +122,20 @@ pub fn lex(input: &str) -> Result<Vec<Token>, String> {
         if states.is_empty() {
             if let Some(tc) = ac.iter().cloned().next() {
                 if tc == TokenClass::EOF {
-                    tokenized_input.push(Token(tc, ""));
+                    tokenized_input.push(Token(tc, "", Position(line_start, col_start)));
                     return Ok(tokenized_input)
                 }
 
-                tokenized_input.push(Token(tc, &input[pos_start..pos]));
+                tokenized_input.push(Token(tc, &input[pos_start..pos], Position(line_start, col_start)));
 
                 ac.clear();
                 states.clear();
                 states.push(0);
                 pos_start = pos;
+                line_start = line;
+                col_start = col;
             } else {
-                return Err(format!("unexpected character {:?} at pos {}", chr, pos));
+                return Err(format!("unexpected character {:?} at line {} col {}", chr, line, col));
             }
         } else {
             ac = states.iter()
@@ -133,6 +144,13 @@ pub fn lex(input: &str) -> Result<Vec<Token>, String> {
                 .collect();
             chr = i.next();
             pos += 1;
+            if linebreak {
+                col = 1;
+                line += 1;
+            } else {
+                col += 1;
+            }
+            linebreak = chr == Some('\n');
         }
     }
 }
@@ -144,64 +162,81 @@ pub fn trim_ws(ts: &mut Vec<Token>) {
 
 #[cfg(test)]
 mod test {
-    use super::{Token, TokenClass, lex};
+    use super::{Token, TokenClass, Position, lex};
 
     #[test]
     fn sequence() {
-        assert_eq!(lex("seq=(foo bar x1 1234+4 +- 5*90);"), Ok(vec![
-            Token(TokenClass::Symbol, "seq"),
-            Token(TokenClass::Assign, "="),
-            Token(TokenClass::LParen, "("),
-            Token(TokenClass::Symbol, "foo"),
-            Token(TokenClass::WS, " "),
-            Token(TokenClass::Symbol, "bar"),
-            Token(TokenClass::WS, " "),
-            Token(TokenClass::Symbol, "x1"),
-            Token(TokenClass::WS, " "),
-            Token(TokenClass::Number, "1234"),
-            Token(TokenClass::Plus, "+"),
-            Token(TokenClass::Number, "4"),
-            Token(TokenClass::WS, " "),
-            Token(TokenClass::Plus, "+"),
-            Token(TokenClass::Minus, "-"),
-            Token(TokenClass::WS, " "),
-            Token(TokenClass::Number, "5"),
-            Token(TokenClass::Times, "*"),
-            Token(TokenClass::Number, "90"),
-            Token(TokenClass::RParen, ")"),
-            Token(TokenClass::Semicolon, ";"),
-            Token(TokenClass::EOF, ""),
+        assert_eq!(lex("seq=(foo bar x1  1234+4 +- 5*90);"), Ok(vec![
+            Token(TokenClass::Symbol,   "seq",  Position(1, 1)),
+            Token(TokenClass::Assign,   "=",    Position(1, 4)),
+            Token(TokenClass::LParen,   "(",    Position(1, 5)),
+            Token(TokenClass::Symbol,   "foo",  Position(1, 6)),
+            Token(TokenClass::WS,       " ",    Position(1, 9)),
+            Token(TokenClass::Symbol,   "bar",  Position(1, 10)),
+            Token(TokenClass::WS,       " ",    Position(1, 13)),
+            Token(TokenClass::Symbol,   "x1",   Position(1, 14)),
+            Token(TokenClass::WS,       "  ",   Position(1, 16)),
+            Token(TokenClass::Number,   "1234", Position(1, 18)),
+            Token(TokenClass::Plus,     "+",    Position(1, 22)),
+            Token(TokenClass::Number,   "4",    Position(1, 23)),
+            Token(TokenClass::WS,       " ",    Position(1, 24)),
+            Token(TokenClass::Plus,     "+",    Position(1, 25)),
+            Token(TokenClass::Minus,    "-",    Position(1, 26)),
+            Token(TokenClass::WS,       " ",    Position(1, 27)),
+            Token(TokenClass::Number,   "5",    Position(1, 28)),
+            Token(TokenClass::Times,    "*",    Position(1, 29)),
+            Token(TokenClass::Number,   "90",   Position(1, 30)),
+            Token(TokenClass::RParen,   ")",    Position(1, 32)),
+            Token(TokenClass::Semicolon, ";",   Position(1, 33)),
+            Token(TokenClass::EOF,       "",    Position(1, 34)),
         ]));
 
         assert_eq!(lex("if iff then thenn else elsee"), Ok(vec![
-            Token(TokenClass::If, "if"),
-            Token(TokenClass::WS, " "),
-            Token(TokenClass::Symbol, "iff"),
-            Token(TokenClass::WS, " "),
-            Token(TokenClass::Then, "then"),
-            Token(TokenClass::WS, " "),
-            Token(TokenClass::Symbol, "thenn"),
-            Token(TokenClass::WS, " "),
-            Token(TokenClass::Else, "else"),
-            Token(TokenClass::WS, " "),
-            Token(TokenClass::Symbol, "elsee"),
-            Token(TokenClass::EOF, ""),
+            Token(TokenClass::If,     "if",    Position(1, 1)),
+            Token(TokenClass::WS,     " ",     Position(1, 3)),
+            Token(TokenClass::Symbol, "iff",   Position(1, 4)),
+            Token(TokenClass::WS,     " ",     Position(1, 7)),
+            Token(TokenClass::Then,   "then",  Position(1, 8)),
+            Token(TokenClass::WS,     " ",     Position(1, 12)),
+            Token(TokenClass::Symbol, "thenn", Position(1, 13)),
+            Token(TokenClass::WS,     " ",     Position(1, 18)),
+            Token(TokenClass::Else,   "else",  Position(1, 19)),
+            Token(TokenClass::WS,     " ",     Position(1, 23)),
+            Token(TokenClass::Symbol, "elsee", Position(1, 24)),
+            Token(TokenClass::EOF,    "",      Position(1, 29)),
         ]));
     }
 
     #[test]
-    fn weird() {
+    fn repeated_binops() {
         assert_eq!(lex("***+++;;;"), Ok(vec![
-            Token(TokenClass::Times, "*"),
-            Token(TokenClass::Times, "*"),
-            Token(TokenClass::Times, "*"),
-            Token(TokenClass::Plus, "+"),
-            Token(TokenClass::Plus, "+"),
-            Token(TokenClass::Plus, "+"),
-            Token(TokenClass::Semicolon, ";"),
-            Token(TokenClass::Semicolon, ";"),
-            Token(TokenClass::Semicolon, ";"),
-            Token(TokenClass::EOF, ""),
+            Token(TokenClass::Times,     "*", Position(1, 1)),
+            Token(TokenClass::Times,     "*", Position(1, 2)),
+            Token(TokenClass::Times,     "*", Position(1, 3)),
+            Token(TokenClass::Plus,      "+", Position(1, 4)),
+            Token(TokenClass::Plus,      "+", Position(1, 5)),
+            Token(TokenClass::Plus,      "+", Position(1, 6)),
+            Token(TokenClass::Semicolon, ";", Position(1, 7)),
+            Token(TokenClass::Semicolon, ";", Position(1, 8)),
+            Token(TokenClass::Semicolon, ";", Position(1, 9)),
+            Token(TokenClass::EOF,       "",  Position(1, 10)),
+        ]));
+    }
+
+    #[test]
+    fn newlines() {
+        assert_eq!(lex("a=1;\nb=2;\n"), Ok(vec![
+            Token(TokenClass::Symbol,    "a",  Position(1, 1)),
+            Token(TokenClass::Assign,    "=",  Position(1, 2)),
+            Token(TokenClass::Number,    "1",  Position(1, 3)),
+            Token(TokenClass::Semicolon, ";",  Position(1, 4)),
+            Token(TokenClass::WS,        "\n", Position(1, 5)),
+            Token(TokenClass::Symbol,    "b",  Position(2, 1)),
+            Token(TokenClass::Assign,    "=",  Position(2, 2)),
+            Token(TokenClass::Number,    "2",  Position(2, 3)),
+            Token(TokenClass::Semicolon, ";",  Position(2, 4)),
+            Token(TokenClass::WS,        "\n", Position(2, 5)),
+            Token(TokenClass::EOF,       "",   Position(3, 1)),
         ]));
     }
 }
