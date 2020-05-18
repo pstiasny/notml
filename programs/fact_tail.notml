@@ -1,0 +1,6 @@
+factrec n acc = if n - 1
+  then factrec (n - 1) (n * acc)
+  else acc;
+
+fact n = factrec n 1;
+main = print(fact 5);

@@ -1,0 +1,5 @@
+fibrec n f1 f2 = if n then fibrec (n - 1) f2 (f1 + f2) else f2;
+
+fib n = fibrec (n-2) 0 1;
+
+main = print(fib 10);
