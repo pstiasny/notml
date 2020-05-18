@@ -51,8 +51,10 @@ struct Config {
 }
 
 
-fn run_cmd(cmd: &str, args: &[String]) -> std::io::Result<()> {
-    println!("{} {:?}", cmd, args);
+fn run_cmd(cmd: &str, args: &[String], verbose: bool) -> std::io::Result<()> {
+    if verbose {
+        println!("{} {:?}", cmd, args);
+    }
 
     let output = Command::new(cmd)
         .args(args)
@@ -128,7 +130,12 @@ fn main() -> std::io::Result<()> {
              .short("-o")
              .value_name("FILE")
              .help("Binary file path"))
+        .arg(Arg::with_name("verbose")
+             .short("-v")
+             .help("Verbose output"))
         .get_matches();
+
+    let verbose = arg_matches.occurrences_of("verbose") > 0;
 
     let mut config_str = String::new();
     let config_path = arg_matches.value_of("config").unwrap_or("config.toml");
@@ -158,15 +165,21 @@ fn main() -> std::io::Result<()> {
     };
 
     let lex_result = lex(&input);
-    println!("Tokens: {:?}", lex_result);
+    if verbose {
+        println!("Tokens: {:?}", lex_result);
+    }
     if let Ok(mut tokenized_input) = lex_result {
         trim_ws(&mut tokenized_input);
 
         let res = parse(&tokenized_input);
-        println!("Parse: {:#?}", res);
+        if verbose {
+            println!("Parse: {:#?}", res);
+        }
         if let Ok(pt) = res {
             let ares = annotate(&pt);
-            println!("Annotated: {:#?}", ares);
+            if verbose {
+                println!("Annotated: {:#?}", ares);
+            }
 
             if let Ok(at) = ares {
                 //println!("Eval: {:?}", eval(&pt));
@@ -176,7 +189,10 @@ fn main() -> std::io::Result<()> {
                         let mut outfile = File::create(&asm_path)?;
                         write_amd64(&at, &mut outfile)?;
 
-                        run_cmd("nasm", &nasm_args(&config, &asm_path, &object_path))?;
+                        run_cmd(
+                            "nasm",
+                            &nasm_args(&config, &asm_path, &object_path),
+                            verbose)?;
                     }
                     Backend::LLVM => {
                         let mut outstr = String::new();
@@ -184,10 +200,16 @@ fn main() -> std::io::Result<()> {
                         let mut llvm_ir_file = File::create(&llvm_ir_path)?;
                         llvm_ir_file.write_all(outstr.as_bytes())?;
 
-                        run_cmd(&config.llvm.llc_path, &llc_args(&config, &llvm_ir_path, &object_path))?;
+                        run_cmd(
+                            &config.llvm.llc_path,
+                            &llc_args(&config, &llvm_ir_path, &object_path),
+                            verbose)?;
                     }
                 }
-                run_cmd("ld", &linker_args(&config, &object_path, &output_path))?;
+                run_cmd(
+                    "ld",
+                    &linker_args(&config, &object_path, &output_path),
+                    verbose)?;
 
                 println!("Done 💖");
                 return Ok(());
