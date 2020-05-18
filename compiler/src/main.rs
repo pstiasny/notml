@@ -5,7 +5,7 @@ extern crate toml;
 extern crate serde;
 extern crate clap;
 
-use std::io::{Read};
+use std::io::{Read, Write};
 use std::fs::File;
 use std::process::{Command, Stdio, exit};
 
@@ -16,8 +16,15 @@ use notmlc::lexer::{lex, trim_ws};
 use notmlc::parser::parse;
 use notmlc::sem::annotate;
 use notmlc::codegen::write_amd64;
-use notmlc::interpreter::eval;
+//use notmlc::interpreter::eval;
+use notmlc::llvm::emit_ir;
 
+
+#[derive(Deserialize)]
+enum Backend {
+    LLVM,
+    InternalAMD64,
+}
 
 #[derive(Deserialize)]
 struct AssemblerConfig {
@@ -30,8 +37,16 @@ struct LinkerConfig {
 }
 
 #[derive(Deserialize)]
+struct LLVMConfig {
+    llc_path: String,
+    llc_args: Vec<String>,
+}
+
+#[derive(Deserialize)]
 struct Config {
+    backend: Backend,
     assembler: AssemblerConfig,
+    llvm: LLVMConfig,
     linker: LinkerConfig,
 }
 
@@ -64,6 +79,20 @@ fn nasm_args<'a>(
     args.push("-o".to_string());
     args.push(object_file.to_string());
     args.push(asm_file.to_string());
+    args
+}
+
+
+fn llc_args<'a>(
+    cfg: &'a Config,
+    ll_file: &'a str,
+    object_file: &'a str
+) -> Vec<String> {
+    let mut args: Vec<String> = Vec::new();
+    args.extend(cfg.llvm.llc_args.clone());
+    args.push("--filetype=obj".to_string());
+    args.push(format!("-o={}", object_file));
+    args.push(ll_file.to_string());
     args
 }
 
@@ -120,6 +149,7 @@ fn main() -> std::io::Result<()> {
         input_path.clone()
     };
     let asm_path = format!("{}.asm", base_path);
+    let llvm_ir_path = format!("{}.ll", base_path);
     let object_path = format!("{}.o", base_path);
     let output_path = if base_path == input_path {
         format!("{}.out", base_path)
@@ -139,12 +169,24 @@ fn main() -> std::io::Result<()> {
             println!("Annotated: {:#?}", ares);
 
             if let Ok(at) = ares {
-                println!("Eval: {:?}", eval(&pt));
+                //println!("Eval: {:?}", eval(&pt));
 
-                let mut outfile = File::create(&asm_path)?;
-                write_amd64(&at, &mut outfile)?;
+                match config.backend {
+                    Backend::InternalAMD64 => {
+                        let mut outfile = File::create(&asm_path)?;
+                        write_amd64(&at, &mut outfile)?;
 
-                run_cmd("nasm", &nasm_args(&config, &asm_path, &object_path))?;
+                        run_cmd("nasm", &nasm_args(&config, &asm_path, &object_path))?;
+                    }
+                    Backend::LLVM => {
+                        let mut outstr = String::new();
+                        emit_ir(&at, &mut outstr);
+                        let mut llvm_ir_file = File::create(&llvm_ir_path)?;
+                        llvm_ir_file.write_all(outstr.as_bytes())?;
+
+                        run_cmd(&config.llvm.llc_path, &llc_args(&config, &llvm_ir_path, &object_path))?;
+                    }
+                }
                 run_cmd("ld", &linker_args(&config, &object_path, &output_path))?;
 
                 println!("Done 💖");

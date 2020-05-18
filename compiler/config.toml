@@ -1,3 +1,9 @@
+backend = "LLVM"
+
+[llvm]
+llc_path = "/usr/local/opt/llvm/bin/llc"
+llc_args = []
+
 [assembler]
 nasm_args = ["-g", "-f", "macho64", "-F", "dwarf"]
 

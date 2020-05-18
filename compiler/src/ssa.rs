@@ -8,7 +8,9 @@ type BlockId = usize;
 #[derive(Debug, PartialEq)]
 pub enum Op {
     Binary { dst: Register, left: Register, right: Register, operator: BinOp },
-    Phi { dst: Register, left: Register, right: Register },
+    Phi { dst: Register,
+          left: Register, left_block: BlockId,
+          right: Register, right_block: BlockId },
     Const { dst: Register, value: i32 },
     Call { dst: Register, function: String, args: Vec<Register>, call_type: CallType },
 }
@@ -29,6 +31,17 @@ pub struct Block {
 struct FunctionEnv {
     register_counter: u64,
     blocks: Vec<Block>,
+}
+
+impl Op {
+    pub fn dst(&self) -> Register {
+        match self {
+            Self::Binary { dst, left: _, right: _, operator: _ } => *dst,
+            Self::Phi { dst, left: _, left_block: _, right: _, right_block: _ } => *dst,
+            Self::Const { dst, value: _ } => *dst,
+            Self::Call { dst, function: _, args: _, call_type: _ } => *dst,
+        }
+    }
 }
 
 impl Block {
@@ -121,7 +134,11 @@ fn emit_expr<'a>(e: &AExpr, mut env: &mut FunctionEnv) -> u64 {
             env.blocks[initial_block_id].exit = BlockExit::Branch(reg_cond, cons_first_block_id, alt_first_block_id);
             env.blocks[cons_last_block_id].exit = BlockExit::UnconditionalJump(env.current_block_id());
             env.blocks[alt_last_block_id].exit = BlockExit::UnconditionalJump(env.current_block_id());
-            env.push_op(Op::Phi { dst, left: reg_cons, right: reg_alt });
+            env.push_op(Op::Phi {
+                dst,
+                left: reg_cons, left_block: cons_last_block_id,
+                right: reg_alt, right_block: alt_last_block_id
+            });
             dst
         }
     }
@@ -212,7 +229,7 @@ mod test {
                 },
                 Block {  // 4
                     ops: vec![
-                        Op::Phi { dst: 2, left: 5, right: 6 },
+                        Op::Phi { dst: 2, left: 5, left_block: 2, right: 6, right_block: 3 },
                     ],
                     exit: BlockExit::UnconditionalJump(9),
                 },
@@ -237,13 +254,13 @@ mod test {
                 },
                 Block {  // 8
                     ops: vec![
-                        Op::Phi { dst: 7, left: 10, right: 11 },
+                        Op::Phi { dst: 7, left: 10, left_block: 6, right: 11, right_block: 7 },
                     ],
                     exit: BlockExit::UnconditionalJump(9),
                 },
                 Block {  // 9
                     ops: vec![
-                        Op::Phi { dst: 1, left: 2, right: 7 },
+                        Op::Phi { dst: 1, left: 2, left_block: 4, right: 7, right_block: 8 },
                     ],
                     exit: BlockExit::Return(1),
                 },

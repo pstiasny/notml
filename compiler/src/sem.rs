@@ -23,15 +23,18 @@ pub enum AExpr {
 
 #[derive(Debug, PartialEq)]
 pub struct AFunSig {
-    name: String,
-    arity: u8,
-    native: bool,
+    pub name: String,
+    pub arity: u8,
+    pub native: bool,
 }
 
 #[derive(Debug, PartialEq)]
 pub struct AFun(Rc<AFunSig>, Rc<AExpr>);
 
 impl AFun {
+    pub fn signature(&self) -> &AFunSig {
+        &self.0
+    }
     pub fn name(&self) -> &String {
         &self.0.name
     }
