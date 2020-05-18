@@ -16,7 +16,6 @@ use notmlc::lexer::{lex, trim_ws};
 use notmlc::parser::parse;
 use notmlc::sem::annotate;
 use notmlc::codegen::write_amd64;
-//use notmlc::interpreter::eval;
 use notmlc::llvm::emit_ir;
 
 
@@ -182,8 +181,6 @@ fn main() -> std::io::Result<()> {
             }
 
             if let Ok(at) = ares {
-                //println!("Eval: {:?}", eval(&pt));
-
                 match config.backend {
                     Backend::InternalAMD64 => {
                         let mut outfile = File::create(&asm_path)?;
