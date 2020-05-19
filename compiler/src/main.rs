@@ -164,19 +164,19 @@ fn main() -> std::io::Result<()> {
     };
 
     let lex_result = lex(&input);
-    if verbose {
+    if verbose || lex_result.is_err() {
         println!("Tokens: {:?}", lex_result);
     }
     if let Ok(mut tokenized_input) = lex_result {
         trim_ws(&mut tokenized_input);
 
         let res = parse(&tokenized_input);
-        if verbose {
+        if verbose || res.is_err() {
             println!("Parse: {:#?}", res);
         }
         if let Ok(pt) = res {
             let ares = annotate(&pt);
-            if verbose {
+            if verbose || ares.is_err() {
                 println!("Annotated: {:#?}", ares);
             }
 
