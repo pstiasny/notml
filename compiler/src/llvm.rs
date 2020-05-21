@@ -53,16 +53,16 @@ fn emit_function_ir(signature: &AFunSig, code: &Vec<Block>, out: &mut String) {
                         _ => function.clone(),
                     };
                     let args_str = args.iter()
-                        .map(|arg_reg| format!("i64 %t{}, ", arg_reg))
+                        .map(|arg_reg| format!("i64 %t{}", arg_reg))
                         .collect::<Vec<_>>()
-                        .concat();
+                        .join(", ");
                     let prefix = match call_type {
                         CallType::Tail => "tail ",
                         _ => "",
                     };
                     out.push_str(&format!(
                         "  %t{} = {}call i64 @{}({})\n",
-                        dst, prefix, fname, &args_str[..args_str.len() - 2]));
+                        dst, prefix, fname, args_str));
                 }
             }
         }
