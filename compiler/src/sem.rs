@@ -265,6 +265,9 @@ pub fn annotate(p: &Program) -> Result<AProgram, String> {
     funs.insert(
         "print".to_string(),
         Rc::new(AFunSig { name: "print".to_string(), arity: 1, native: true }));
+    funs.insert(
+        "pchar".to_string(),
+        Rc::new(AFunSig { name: "pchar".to_string(), arity: 1, native: true }));
 
     let mut ap: AProgram = p.definitions().iter()
         .map(|f| {

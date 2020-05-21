@@ -89,7 +89,7 @@ fn emit_function_ir(signature: &AFunSig, code: &Vec<Block>, out: &mut String) {
 }
 
 pub fn emit_ir(p: &AProgram, mut out: &mut String) {
-    out.push_str("declare i64 @rt_print(i64)\n\n");
+    out.push_str("declare i64 @rt_print(i64)\ndeclare i64 @rt_pchar(i64)\n\n");
 
     for ref function in p.values() {
         let blocks = crate::ssa::emit_function(&function);

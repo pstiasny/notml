@@ -1,0 +1,39 @@
+nl = pchar 10;
+
+print_fizz = do
+  pchar 102;
+  pchar 105;
+  pchar 122;
+  pchar 122
+end;
+
+print_buzz = do
+  pchar 98;
+  pchar 117;
+  pchar 122;
+  pchar 122
+end;
+
+print_fizzbuzz = do
+  print_fizz;
+  print_buzz
+end;
+
+do_fb n m f b fb =
+  if n - m
+    then
+      if fb - 14 then
+        do print_fizzbuzz; nl; do_fb n (m + 1) 0 0 0 end
+      else if f - 2 then
+        do print_fizz; nl; do_fb n (m + 1) 0 (b + 1) (fb + 1) end
+      else if b - 4 then
+        do print_buzz; nl; do_fb n (m + 1) (f + 1) 0 (fb + 1) end
+      else
+        do print m; do_fb n (m + 1) (f + 1) (b + 1) (fb + 1) end
+
+    else 0;
+
+
+fizzbuzz n = do_fb n 1 0 0 0;
+
+main = fizzbuzz 25;
