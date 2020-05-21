@@ -19,6 +19,7 @@ pub enum AExpr {
     Call(String, Vec<Rc<AExpr>>, CallType),
     Arg(u8),
     Cond(Rc<AExpr>, Rc<AExpr>, Rc<AExpr>),
+    Seq(Vec<Rc<AExpr>>),
 }
 
 #[derive(Debug, PartialEq)]
@@ -90,6 +91,10 @@ pub fn acond(cond: Rc<AExpr>, cons: Rc<AExpr>, alt: Rc<AExpr>) -> Rc<AExpr> {
     Rc::new(AExpr::Cond(cond, cons, alt))
 }
 
+pub fn aseq(exprs: Vec<Rc<AExpr>>) -> Rc<AExpr> {
+    Rc::new(AExpr::Seq(exprs))
+}
+
 fn annotate_expr(
     funs: &HashMap<String, Rc<AFunSig>>,
     args: &HashMap<String, u8>,
@@ -116,7 +121,13 @@ fn annotate_expr(
         Expr::Cond(c, cons, alt) => Ok(acond(
             annotate_expr(&funs, &args, c)?,
             annotate_expr(&funs, &args, cons)?,
-            annotate_expr(&funs, &args, alt)?))
+            annotate_expr(&funs, &args, alt)?)),
+        Expr::Seq(exprs) => {
+            let aexprs: Result<Vec<Rc<AExpr>>, String> = exprs.iter()
+                .map(|e| annotate_expr(&funs, &args, &e))
+                .collect();
+            Ok(aseq(aexprs?))
+        }
     }
 }
 
@@ -141,7 +152,12 @@ fn map_expr(
         AExpr::Cond(ref c, ref cons, ref alt) => acond(
             f(Rc::clone(c))?,
             f(Rc::clone(cons))?,
-            f(Rc::clone(alt))?)
+            f(Rc::clone(alt))?),
+        AExpr::Seq(ref exprs) => {
+            let exprsm: Result<Vec<Rc<AExpr>>, String> = 
+                exprs.iter().cloned().map(f).collect();
+            aseq(exprsm?)
+        },
     };
     Ok(node)
 }
@@ -218,6 +234,12 @@ fn replace_tailcalls(p: AProgram) -> Result<AProgram, String> {
                 Rc::clone(c),
                 rec(p, f, Rc::clone(cons))?,
                 rec(p, f, Rc::clone(alt))?),
+            AExpr::Seq(ref exprs) => {
+                let mut replaced_exprs = exprs.clone();
+                let last = replaced_exprs.len() - 1;
+                replaced_exprs[last] = rec(p, f, Rc::clone(&replaced_exprs[last]))?;
+                aseq(replaced_exprs)
+            }
             _ => e
         };
         Ok(res)
@@ -264,7 +286,7 @@ pub fn annotate(p: &Program) -> Result<AProgram, String> {
 #[cfg(test)]
 mod test {
     use crate::ast::{Program, Expr, BinOp};
-    use super::{CallType, annotate, aprogram, afun, aarg, abinop, acall, acond, anumber};
+    use super::{CallType, annotate, aprogram, afun, aarg, abinop, acall, acond, anumber, aseq};
 
     #[test]
     fn simple() {
@@ -457,6 +479,11 @@ mod test {
                             Expr::number(1),
                             Expr::call("k", vec![Expr::number(2)]))
                     ]))
+            .define("l", vec!["x"],
+                    Expr::seq(vec![
+                        Expr::call("l", vec![Expr::number(1)]),
+                        Expr::call("l", vec![Expr::number(2)]),
+                    ]))
         ).unwrap();
 
         assert_eq!(
@@ -509,6 +536,14 @@ mod test {
                               acall("k", vec![anumber(2)], CallType::Regular))
                       ],
                       CallType::Tail))));
+
+        assert_eq!(
+            ap.get("l"),
+            Some(&afun("l", 1,
+                aseq(vec![
+                    acall("l", vec![anumber(1)], CallType::Regular),
+                    acall("l", vec![anumber(2)], CallType::Tail),
+                ]))));
     }
 
     #[test]

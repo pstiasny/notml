@@ -16,6 +16,7 @@ pub enum Expr {
     Call(String, Vec<Expr>),
     Var(String),
     Cond(Box<Expr>, Box<Expr>, Box<Expr>),
+    Seq(Vec<Expr>),
 }
 
 impl Expr {
@@ -39,6 +40,9 @@ impl Expr {
     }
     pub fn cond(c: Expr, cons: Expr, alt: Expr) -> Expr {
         Expr::Cond(Box::new(c), Box::new(cons), Box::new(alt))
+    }
+    pub fn seq(exprs: Vec<Expr>) -> Expr {
+        Expr::Seq(exprs)
     }
 }
 

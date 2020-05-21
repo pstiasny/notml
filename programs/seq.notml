@@ -1,0 +1,9 @@
+loop n = if n
+  then
+    do print (n + 1);
+       loop (n - 1)
+    end
+  else
+    0;
+
+main = loop 9;

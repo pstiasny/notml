@@ -4,7 +4,9 @@ use crate::ast::*;
 // Grammar:
 // E -> D ; E | eof
 // D -> sym sym* = S
-// S -> Q | T + T | T - T | T
+// S -> P | Q | T + T | T - T | T
+// P -> do R* S end
+// R -> S ;
 // Q -> if S then S else S
 // T -> U * T | U
 // U -> C | V
@@ -135,10 +137,14 @@ fn t<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
 }
 
 fn s1<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
-    q(ts)
+    p(ts)
 }
 
 fn s2<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
+    q(ts)
+}
+
+fn s3<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
     let (expr1, rest) = t(ts)?;
     let (_, rest) = token(rest, TokenClass::Plus)?;
     let (expr2, rest) = t(rest)?;
@@ -146,7 +152,7 @@ fn s2<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
     Ok((expr, rest))
 }
 
-fn s3<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
+fn s4<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
     let (expr1, rest) = t(ts)?;
     let (_, rest) = token(rest, TokenClass::Minus)?;
     let (expr2, rest) = t(rest)?;
@@ -154,7 +160,7 @@ fn s3<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
     Ok((expr, rest))
 }
 
-fn s4<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
+fn s5<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
     let expr = t(ts);
     expr
 }
@@ -164,6 +170,26 @@ fn s<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
         .or_backtrack(|| s2(ts))
         .or_backtrack(|| s3(ts))
         .or_backtrack(|| s4(ts))
+        .or_backtrack(|| s5(ts))
+}
+
+fn p<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
+    let (_, rest) = token(ts, TokenClass::Do)?;
+
+    let (mut sub_exprs, rest) = many(&r, rest)?;
+    let (last_sub_expr, rest) = s(rest)?;
+    sub_exprs.push(last_sub_expr);
+
+    let (_, rest) = token(rest, TokenClass::End)?;
+
+    let expr = Expr::seq(sub_exprs);
+    Ok((expr, rest))
+}
+
+fn r<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
+    let (expr, rest) = s(ts)?;
+    let (_, rest) = token(rest, TokenClass::Semicolon)?;
+    Ok((expr, rest))
 }
 
 fn q<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
@@ -357,6 +383,16 @@ mod test {
                         Expr::var("y"),
                         Expr::number(3))
                 )),
+        ]);
+
+        assert_eq!(parse_str("main = do f 1; g 2 end;").definitions_vec(), vec![
+            &FunDefinition::new(
+                "main",
+                vec![],
+                Expr::seq(vec![
+                    Expr::call("f", vec![Expr::number(1)]),
+                    Expr::call("g", vec![Expr::number(2)]),
+                ])),
         ]);
     }
 

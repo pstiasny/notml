@@ -117,6 +117,9 @@ fn write_expr_amd64(e: &AExpr, env: &FunctionEnv, w: &mut dyn Write) -> std::io:
             write_expr_amd64(alt, env, w)?;
             writeln!(w, "done{}:", alt_lbl)?;
         }
+        AExpr::Seq(ref _exprs) => {
+            unimplemented!();
+        }
     }
     Ok(())
 }

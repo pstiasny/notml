@@ -141,6 +141,13 @@ fn emit_expr<'a>(e: &AExpr, mut env: &mut FunctionEnv) -> u64 {
             });
             dst
         }
+        AExpr::Seq(ref exprs) => {
+            let mut dst = 0;
+            for ref expr in exprs {
+                dst = emit_expr(&expr, &mut env);
+            }
+            dst
+        }
     }
 }
 
@@ -156,7 +163,7 @@ pub fn emit_function<'a>(function: &'a AFun) -> Vec<Block> {
 mod test {
     use super::{Op, BlockExit, Block, emit_function};
     use crate::ast::BinOp;
-    use crate::sem::{CallType, abinop, aarg, anumber, afun, acond, acall};
+    use crate::sem::{CallType, abinop, aarg, anumber, afun, acond, acall, aseq};
 
     #[test]
     fn simple() {
@@ -282,6 +289,27 @@ mod test {
                         Op::Call { dst: 1, function: "bar".to_string(), args: vec![2, 3], call_type: CallType::Regular },
                     ],
                     exit: BlockExit::Return(1)
+                },
+            ]);
+    }
+
+    #[test]
+    fn seq() {
+        let fun = afun("foo", 1,
+            aseq(vec![
+                anumber(10),
+                anumber(20),
+            ]));
+
+        assert_eq!(
+            emit_function(&fun),
+            vec![
+                Block {
+                    ops: vec![
+                        Op::Const { dst: 1, value: 10 },
+                        Op::Const { dst: 2, value: 20 },
+                    ],
+                    exit: BlockExit::Return(2)
                 },
             ]);
     }

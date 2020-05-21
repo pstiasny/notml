@@ -11,6 +11,8 @@ pub enum TokenClass {
     If,
     Then,
     Else,
+    Do,
+    End,
     Semicolon,
     WS,
     EOF,
@@ -33,7 +35,8 @@ fn transitions(state: u8, chr: Option<char>) -> &'static [u8] {
             0 => match c {
                 'i' => &[100, 11],
                 't' => &[100, 13],
-                'e' => &[100, 17],
+                'e' => &[100, 17, 24],
+                'd' => &[100, 22],
                 'a'..='z'| 'A'..='Z' | '_' => &[100],
                 ' ' | '\n' => &[2],
                 '=' => &[4],
@@ -64,6 +67,11 @@ fn transitions(state: u8, chr: Option<char>) -> &'static [u8] {
             18 => match c { 's' => &[19], _ => &[], }
             19 => match c { 'e' => &[20], _ => &[], }
 
+            22 => match c { 'o' => &[23], _ => &[], }
+
+            24 => match c { 'n' => &[25], _ => &[], }
+            25 => match c { 'd' => &[26], _ => &[], }
+
             100 => match c {
                 'a'..='z'| 'A'..='Z' | '0'..='9' | '_' => &[100],
                 _ => &[],
@@ -90,6 +98,8 @@ fn accepting(state: u8) -> &'static Option<TokenClass> {
         16 => &Some(TokenClass::Then),
         20 => &Some(TokenClass::Else),
         21 => &Some(TokenClass::Minus),
+        23 => &Some(TokenClass::Do),
+        26 => &Some(TokenClass::End),
         100 => &Some(TokenClass::Symbol),
         _ => &None,
     }
@@ -191,7 +201,7 @@ mod test {
             Token(TokenClass::EOF,       "",    Position(1, 34)),
         ]));
 
-        assert_eq!(lex("if iff then thenn else elsee"), Ok(vec![
+        assert_eq!(lex("if iff then thenn else elsee do end"), Ok(vec![
             Token(TokenClass::If,     "if",    Position(1, 1)),
             Token(TokenClass::WS,     " ",     Position(1, 3)),
             Token(TokenClass::Symbol, "iff",   Position(1, 4)),
@@ -203,7 +213,11 @@ mod test {
             Token(TokenClass::Else,   "else",  Position(1, 19)),
             Token(TokenClass::WS,     " ",     Position(1, 23)),
             Token(TokenClass::Symbol, "elsee", Position(1, 24)),
-            Token(TokenClass::EOF,    "",      Position(1, 29)),
+            Token(TokenClass::WS,     " ",     Position(1, 29)),
+            Token(TokenClass::Do,     "do",    Position(1, 30)),
+            Token(TokenClass::WS,     " ",     Position(1, 32)),
+            Token(TokenClass::End,    "end",   Position(1, 33)),
+            Token(TokenClass::EOF,    "",      Position(1, 36)),
         ]));
     }
 
