@@ -1,9 +1,8 @@
 use std::cell::Cell;
 use std::io::prelude::Write;
-use std::rc::Rc;
 
 use crate::ast::BinOp;
-use crate::sem::{AProgram, AFun, AExpr, CallType};
+use crate::sem::{AProgram, AFun, AAST, AExpr, CallType};
 
 
 struct ProgramEnv {
@@ -39,7 +38,7 @@ fn arg_offset_to_rbp(arity: u8, idx: u8) -> u8 {
 
 fn write_call_amd64<'a>(
     name: &str,
-    args: &'a Vec<Rc<AExpr>>,
+    args: &'a Vec<AAST>,
     call_type: CallType,
     env: &FunctionEnv,
     w: &mut dyn Write
@@ -78,8 +77,8 @@ fn write_call_amd64<'a>(
     Ok(())
 }
 
-fn write_expr_amd64(e: &AExpr, env: &FunctionEnv, w: &mut dyn Write) -> std::io::Result<()> {
-    match *e {
+fn write_expr_amd64(e: &AAST, env: &FunctionEnv, w: &mut dyn Write) -> std::io::Result<()> {
+    match *e.0 {
         AExpr::Number(i) => {
             writeln!(w, "mov rax, {}", i)?;
             w.write_all(b"push rax\n")?;

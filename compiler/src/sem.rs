@@ -11,16 +11,18 @@ pub enum CallType {
     Native,
 }
 
-
-#[derive(Debug, PartialEq)]
-pub enum AExpr {
+#[derive(Debug, PartialEq, Clone)]
+pub enum AExpr<T> {
     Number(i32),
-    BinOp(BinOp, Rc<AExpr>, Rc<AExpr>),
-    Call(String, Vec<Rc<AExpr>>, CallType),
+    BinOp(BinOp, T, T),
+    Call(String, Vec<T>, CallType),
     Arg(u8),
-    Cond(Rc<AExpr>, Rc<AExpr>, Rc<AExpr>),
-    Seq(Vec<Rc<AExpr>>),
+    Cond(T, T, T),
+    Seq(Vec<T>),
 }
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct AAST(pub Rc<AExpr<AAST>>);
 
 #[derive(Debug, PartialEq)]
 pub struct AFunSig {
@@ -30,39 +32,61 @@ pub struct AFunSig {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct AFun(Rc<AFunSig>, Rc<AExpr>);
+pub struct AFun(Rc<AFunSig>, AAST);
 
-impl AFun {
-    pub fn signature(&self) -> &AFunSig {
-        &self.0
-    }
-    pub fn name(&self) -> &String {
-        &self.0.name
-    }
-    pub fn arity(&self) -> u8 {
-        self.0.arity
-    }
-    pub fn code(&self) -> &AExpr {
-        &self.1
-    }
-    pub fn map(self, f: &dyn Fn(Rc<AExpr>) -> Rc<AExpr>) -> Self {
-        AFun(Rc::clone(&self.0), f(self.1))
-    }
-    pub fn try_map<T>(
-        &self,
-        f: &dyn Fn(Rc<AExpr>) -> Result<Rc<AExpr>, T>
-    ) -> Result<Rc<Self>, T> {
-        Ok(Rc::new(AFun(Rc::clone(&self.0), f(Rc::clone(&self.1))?)))
+pub type AProgram = HashMap<String, Rc<AFun>>;
+
+impl<T> AExpr<T> {
+    fn try_map<U, F>(&self, f: &F) -> Result<AExpr<U>, String>
+        where F: Fn(&T) -> Result<U, String>
+    {
+        use AExpr::*;
+
+        let node = match self {
+            Number(x) => Number(*x),
+            BinOp(op, l, r) => BinOp(*op, f(&l)?, f(&r)?),
+            Call(ref name, ref args, ref tail) => {
+                let argsm: Result<Vec<U>, String> = args
+                    .iter()
+                    .map(f)
+                    .collect();
+                Call(name.clone(), argsm?, *tail)
+            }
+            Arg(i) => Arg(*i),
+            Cond(c, cons, alt) => Cond(f(&c)?, f(&cons)?, f(&alt)?),
+            Seq(exprs) => {
+                let exprsm: Result<Vec<U>, String> =
+                    exprs.iter().map(f).collect();
+                Seq(exprsm?)
+            },
+        };
+        Ok(node)
     }
 }
 
-pub type AProgram = HashMap<String, Rc<AFun>>;
+impl AFun {
+    pub fn signature(&self) -> &AFunSig { &self.0 }
+    pub fn name(&self) -> &String       { &self.0.name }
+    pub fn arity(&self) -> u8           { self.0.arity }
+    pub fn code(&self) -> &AAST         { &self.1 }
+
+    pub fn map<F>(self, f: &F) -> Self
+        where F: Fn(AAST) -> AAST
+    {
+        AFun(Rc::clone(&self.0), f(self.1))
+    }
+    pub fn try_map<F, T>(&self, f: &F) -> Result<Rc<Self>, T> 
+        where F: Fn(&AAST) -> Result<AAST, T>
+    {
+        Ok(Rc::new(AFun(Rc::clone(&self.0), f(&self.1)?)))
+    }
+}
 
 pub fn aprogram(fs: Vec<Rc<AFun>>) -> AProgram {
     fs.into_iter().map(move |f| (f.0.name.clone(), Rc::clone(&f))).collect()
 }
 
-pub fn afun(name: &str, arity: u8, code: Rc<AExpr>) -> Rc<AFun> {
+pub fn afun(name: &str, arity: u8, code: AAST) -> Rc<AFun> {
     let fd = AFunSig {
         name: name.to_string(),
         arity,
@@ -71,112 +95,54 @@ pub fn afun(name: &str, arity: u8, code: Rc<AExpr>) -> Rc<AFun> {
     Rc::new(AFun(Rc::new(fd), code))
 }
 
-pub fn aarg(i: u8) -> Rc<AExpr> {
-    Rc::new(AExpr::Arg(i))
+pub fn aast(e: AExpr<AAST>) -> AAST                     { AAST(Rc::new(e)) }
+pub fn aarg(i: u8) -> AAST                              { aast(AExpr::Arg(i)) }
+pub fn anumber(i: i32) -> AAST                          { aast(AExpr::Number(i)) }
+pub fn abinop(op: BinOp, l: AAST, r: AAST) -> AAST      { aast(AExpr::BinOp(op, l, r)) }
+pub fn acond(cond: AAST, cons: AAST, alt: AAST) -> AAST { aast(AExpr::Cond(cond, cons, alt)) }
+pub fn aseq(exprs: Vec<AAST>) -> AAST                   { aast(AExpr::Seq(exprs)) }
+pub fn acall(fname: &str, args: Vec<AAST>, call_type: CallType) -> AAST {
+    aast(AExpr::Call(fname.to_string(), args, call_type))
 }
 
-pub fn anumber(i: i32) -> Rc<AExpr> {
-    Rc::new(AExpr::Number(i))
-}
+fn ast_to_sem(args: &HashMap<String, u8>, e: &Expr) -> AAST {
+    use Expr::*;
 
-pub fn acall(fname: &str, args: Vec<Rc<AExpr>>, call_type: CallType) -> Rc<AExpr> {
-    Rc::new(AExpr::Call(fname.to_string(), args, call_type))
-}
-
-pub fn abinop(op: BinOp, l: Rc<AExpr>, r: Rc<AExpr>) -> Rc<AExpr> {
-    Rc::new(AExpr::BinOp(op, l, r))
-}
-
-pub fn acond(cond: Rc<AExpr>, cons: Rc<AExpr>, alt: Rc<AExpr>) -> Rc<AExpr> {
-    Rc::new(AExpr::Cond(cond, cons, alt))
-}
-
-pub fn aseq(exprs: Vec<Rc<AExpr>>) -> Rc<AExpr> {
-    Rc::new(AExpr::Seq(exprs))
-}
-
-fn annotate_expr(
-    funs: &HashMap<String, Rc<AFunSig>>,
-    args: &HashMap<String, u8>,
-    e: &Expr
-) -> Result<Rc<AExpr>, String> {
     match e {
-        Expr::Number(i) => Ok(anumber(*i)),
-        Expr::BinOp(o, l, r) => Ok(abinop(
-            *o,
-            annotate_expr(&funs, &args, l)?,
-            annotate_expr(&funs, &args, r)?)),
-        Expr::Call(fname, callargs) => {
-            let acallargs: Result<Vec<Rc<AExpr>>, String> = callargs.iter()
-                .map(|e| annotate_expr(&funs, &args, &e))
+        Number(i) => anumber(*i),
+        BinOp(o, l, r) => abinop(*o, ast_to_sem(&args, l), ast_to_sem(&args, r)),
+        Call(fname, callargs) => {
+            let acallargs = callargs.iter()
+                .map(|e| ast_to_sem(&args, &e))
                 .collect();
-            let fd = funs.get(fname).ok_or(format!("Undefined function: {}", fname))?;
-            Ok(acall(&fd.name, acallargs?,  if fd.native {CallType::Native} else {CallType::Regular}))
+            acall(&fname, acallargs, CallType::Regular)
         },
-        Expr::Var(s) => {
+        Var(s) => {
             args.get(s).map(|&n| aarg(n))
-            .or_else(|| funs.get(s).map(|fd| acall(&fd.name, vec![], CallType::Regular)))
-            .ok_or(format!("Undefined symbol: {}", s))
+            .unwrap_or(acall(&s, vec![], CallType::Regular))
         },
-        Expr::Cond(c, cons, alt) => Ok(acond(
-            annotate_expr(&funs, &args, c)?,
-            annotate_expr(&funs, &args, cons)?,
-            annotate_expr(&funs, &args, alt)?)),
-        Expr::Seq(exprs) => {
-            let aexprs: Result<Vec<Rc<AExpr>>, String> = exprs.iter()
-                .map(|e| annotate_expr(&funs, &args, &e))
+        Cond(c, cons, alt) =>
+            acond(ast_to_sem(&args, c), ast_to_sem(&args, cons), ast_to_sem(&args, alt)),
+        Seq(exprs) => {
+            let aexprs = exprs.iter()
+                .map(|e| ast_to_sem(&args, &e))
                 .collect();
-            Ok(aseq(aexprs?))
+            aseq(aexprs)
         }
     }
 }
 
-fn map_expr(
-    f: &dyn Fn(Rc<AExpr>) -> Result<Rc<AExpr>, String>,
-    e: Rc<AExpr>
-) -> Result<Rc<AExpr>, String> {
-    let node = match *e {
-        AExpr::Number(_) => e,
-        AExpr::BinOp(ref op, ref l, ref r) => abinop(
-            *op,
-            f(Rc::clone(l))?,
-            f(Rc::clone(r))?),
-        AExpr::Call(ref name, ref args, ref tail) => {
-            let argsm: Result<Vec<Rc<AExpr>>, String> = args
-                .iter().cloned()
-                .map(f)
-                .collect();
-            acall(&name, argsm?, *tail)
-        }
-        AExpr::Arg(_) => e,
-        AExpr::Cond(ref c, ref cons, ref alt) => acond(
-            f(Rc::clone(c))?,
-            f(Rc::clone(cons))?,
-            f(Rc::clone(alt))?),
-        AExpr::Seq(ref exprs) => {
-            let exprsm: Result<Vec<Rc<AExpr>>, String> = 
-                exprs.iter().cloned().map(f).collect();
-            aseq(exprsm?)
-        },
-    };
-    Ok(node)
+fn collapse<F, T>(f: &F, e: &AAST) -> Result<T, String>
+    where F: Fn(&AExpr<T>) -> Result<T, String>
+{
+    f(&(*e.0).try_map(&|ei| collapse(f, ei))?)
 }
 
-fn traverse(
-    f: &dyn Fn(Rc<AExpr>) -> Result<Rc<AExpr>, String>,
-    e: Rc<AExpr>
-) -> Result<Rc<AExpr>, String> {
-    let mut node = map_expr(&|ei| traverse(f, ei), e)?;
-    node = f(node)?;
-    Ok(node)
-}
-
-fn map_program_functions(
-    f: &dyn Fn(&AProgram, &AFun, Rc<AExpr>) -> Result<Rc<AExpr>, String>,
-    p: AProgram
-) -> Result<AProgram, String> {
+fn map_program_functions<F>(f: &F, p: AProgram) -> Result<AProgram, String>
+    where F: Fn(&AProgram, &AFun, &AAST) -> Result<AAST, String>
+{
     let funs: Vec<Rc<AFun>> = p.iter()
-        .map(|(_, af)| (&af).try_map(&|root| f(&p, &af, Rc::clone(&root))))
+        .map(|(_, af)| (&af).try_map(&|root| f(&p, &af, &root)))
         .collect::<Result<Vec<Rc<AFun>>, String>>()?;
     Ok(aprogram(funs))
 }
@@ -185,24 +151,27 @@ fn check_calls(
     funs: &HashMap<String, Rc<AFunSig>>,
     p: AProgram
 ) -> Result<AProgram, String> {
-    fn f(funs: &HashMap<String, Rc<AFunSig>>, aexpr: Rc<AExpr>) -> Result<Rc<AExpr>, String> {
-        match *aexpr {
-            AExpr::Call(ref fname, ref args, _) => {
-                let fd = funs.get(fname).ok_or(format!("Undefined function: {}", fname))?;
+    fn f(funs: &HashMap<String, Rc<AFunSig>>, aexpr: &AExpr<AAST>) -> Result<AAST, String> {
+        match aexpr {
+            AExpr::Call(fname, args, _) => {
+                let fd = funs.get(fname).ok_or(format!("Undefined symbol: {}", fname))?;
 
                 if fd.arity == args.len() as u8 {
-                    Ok(aexpr)
+                    Ok(
+                        acall(&fname,
+                              args.iter().cloned().collect(),
+                              if fd.native { CallType::Native } else { CallType::Regular }))
                 } else {
                     Err(format!(
                         "function {} requires {} arguments, {} given",
                         fname, fd.arity, args.len()))
                 }
             },
-            _ => Ok(aexpr)
+            _ => Ok(aast(aexpr.clone()))
         }
     }
     map_program_functions(
-        &|_, _, root| traverse(&|x| f(&funs, x), root),
+        &|_, _, root| collapse(&|x| f(&funs, x), &root),
         p)
 }
 
@@ -221,26 +190,26 @@ fn check_main(p: &AProgram) -> Result<(), String> {
 }
 
 fn replace_tailcalls(p: AProgram) -> Result<AProgram, String> {
-    fn rec(p: &AProgram, f: &AFun, e: Rc<AExpr>) -> Result<Rc<AExpr>, String> {
-        let res = match *e {
+    fn rec(p: &AProgram, f: &AFun, t: &AAST) -> Result<AAST, String> {
+        let res = match *t.0 {
             AExpr::Call(ref fname, ref args, CallType::Regular) => {
                 if fname == f.name() {
                     acall(fname, (*args).iter().cloned().collect(), CallType::Tail)
                 } else {
-                    e
+                    t.clone()
                 }
             },
             AExpr::Cond(ref c, ref cons, ref alt) => acond(
-                Rc::clone(c),
-                rec(p, f, Rc::clone(cons))?,
-                rec(p, f, Rc::clone(alt))?),
+                c.clone(),
+                rec(p, f, cons)?,
+                rec(p, f, alt)?),
             AExpr::Seq(ref exprs) => {
                 let mut replaced_exprs = exprs.clone();
                 let last = replaced_exprs.len() - 1;
-                replaced_exprs[last] = rec(p, f, Rc::clone(&replaced_exprs[last]))?;
+                replaced_exprs[last] = rec(p, f, &replaced_exprs[last])?;
                 aseq(replaced_exprs)
             }
-            _ => e
+            _ => t.clone()
         };
         Ok(res)
     }
@@ -272,7 +241,7 @@ pub fn annotate(p: &Program) -> Result<AProgram, String> {
     let mut ap: AProgram = p.definitions().iter()
         .map(|f| {
             let args = f.arg_indexes();
-            let ae = annotate_expr(&funs, &args, &f.code)?;
+            let ae = ast_to_sem(&args, &f.code);
             let sig = funs.get(&f.fname).unwrap();
             let fun = Rc::new(AFun(Rc::clone(sig), ae));
             Ok((f.fname.clone(), fun))
@@ -383,7 +352,7 @@ mod test {
             annotate(
                 &Program::new()
                 .define("main", vec![], Expr::call("f", vec![Expr::number(1)]))),
-            Err("Undefined function: f".to_string())
+            Err("Undefined symbol: f".to_string())
         );
     }
 

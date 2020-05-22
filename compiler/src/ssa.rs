@@ -1,5 +1,5 @@
 use crate::ast::BinOp;
-use crate::sem::{AFun, AExpr, CallType};
+use crate::sem::{AAST, AFun, AExpr, CallType};
 
 
 type Register = u64;
@@ -86,8 +86,8 @@ impl FunctionEnv {
 }
 
 
-fn emit_expr<'a>(e: &AExpr, mut env: &mut FunctionEnv) -> u64 {
-    match *e {
+fn emit_expr<'a>(e: &AAST, mut env: &mut FunctionEnv) -> u64 {
+    match *e.0 {
         AExpr::Number(value) => {
             let dst = env.fresh_register();
             env.push_op(Op::Const { dst, value });
