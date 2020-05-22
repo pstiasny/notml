@@ -8,13 +8,14 @@ extern crate clap;
 use std::io::{Read, Write};
 use std::fs::File;
 use std::process::{Command, Stdio, exit};
+use std::rc::Rc;
 
 use clap::{Arg, App};
 use serde::{Deserialize};
 
 use notmlc::lexer::{lex, trim_ws};
 use notmlc::parser::parse;
-use notmlc::sem::annotate;
+use notmlc::sem::{AFunSig, annotate};
 use notmlc::codegen::write_amd64;
 use notmlc::llvm::emit_ir;
 
@@ -112,6 +113,14 @@ fn linker_args<'a>(
 }
 
 
+fn get_runtime_definitions() -> Vec<Rc<AFunSig>> {
+    vec![
+        Rc::new(AFunSig { name: "print".to_string(), arity: 1, native: true }),
+        Rc::new(AFunSig { name: "pchar".to_string(), arity: 1, native: true }),
+    ]
+}
+
+
 fn main() -> std::io::Result<()> {
     let arg_matches = App::new("NotML compiler")
         .author("Pawel Stiasny <pawelstiasny@gmail.com>")
@@ -175,7 +184,7 @@ fn main() -> std::io::Result<()> {
             println!("Parse: {:#?}", res);
         }
         if let Ok(pt) = res {
-            let ares = annotate(&pt);
+            let ares = annotate(&pt, &get_runtime_definitions());
             if verbose || ares.is_err() {
                 println!("Annotated: {:#?}", ares);
             }
@@ -193,7 +202,7 @@ fn main() -> std::io::Result<()> {
                     }
                     Backend::LLVM => {
                         let mut outstr = String::new();
-                        emit_ir(&at, &mut outstr);
+                        emit_ir(&at, &mut outstr, &get_runtime_definitions());
                         let mut llvm_ir_file = File::create(&llvm_ir_path)?;
                         llvm_ir_file.write_all(outstr.as_bytes())?;
 

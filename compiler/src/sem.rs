@@ -216,7 +216,7 @@ fn replace_tailcalls(p: AProgram) -> Result<AProgram, String> {
     map_program_functions(&rec, p)
 }
 
-pub fn annotate(p: &Program) -> Result<AProgram, String> {
+pub fn annotate(p: &Program, runtime: &Vec<Rc<AFunSig>>) -> Result<AProgram, String> {
     let mut funs: HashMap<String, Rc<AFunSig>> = p.definitions().iter()
         .map(|f| {
             (
@@ -231,12 +231,9 @@ pub fn annotate(p: &Program) -> Result<AProgram, String> {
         .collect();
 
     // TODO: check for collisions with exisiting definitions
-    funs.insert(
-        "print".to_string(),
-        Rc::new(AFunSig { name: "print".to_string(), arity: 1, native: true }));
-    funs.insert(
-        "pchar".to_string(),
-        Rc::new(AFunSig { name: "pchar".to_string(), arity: 1, native: true }));
+    for fsig in runtime {
+        funs.insert(fsig.name.clone(), Rc::clone(fsig));
+    }
 
     let mut ap: AProgram = p.definitions().iter()
         .map(|f| {
@@ -257,15 +254,23 @@ pub fn annotate(p: &Program) -> Result<AProgram, String> {
 
 #[cfg(test)]
 mod test {
+    use std::rc::Rc;
     use crate::ast::{Program, Expr, BinOp};
-    use super::{CallType, annotate, aprogram, afun, aarg, abinop, acall, acond, anumber, aseq};
+    use super::{AFunSig, CallType, annotate, aprogram, afun, aarg, abinop, acall, acond, anumber, aseq};
+
+    fn get_rt() -> Vec<Rc<AFunSig>> {
+        vec![
+            Rc::new(AFunSig { name: "print".to_string(), arity: 1, native: true }),
+        ]
+    }
 
     #[test]
     fn simple() {
         assert_eq!(
             annotate(
                 &Program::new()
-                .define("main", vec![], Expr::number(1))),
+                .define("main", vec![], Expr::number(1)),
+                &get_rt()),
             Ok(
                 aprogram(vec![
                     afun("main", 0, anumber(1))
@@ -281,7 +286,8 @@ mod test {
                 &Program::new()
                 .define("f", vec!["x", "y"],
                         Expr::call("f", vec![Expr::var("y"), Expr::var("x")]))
-                .define("main", vec![], Expr::number(1))
+                .define("main", vec![], Expr::number(1)),
+                &get_rt(),
             ),
             Ok(
                 aprogram(vec![
@@ -300,7 +306,7 @@ mod test {
             .define("y", vec![], Expr::number(1))
             .define("main", vec![], Expr::number(1));
         assert_eq!(
-            annotate(&p),
+            annotate(&p, &get_rt()),
             Ok(
                 aprogram(vec![
                     afun(
@@ -325,7 +331,7 @@ mod test {
             .define("x", vec![], Expr::number(1))
             .define("main", vec![], Expr::number(1));
         assert_eq!(
-            annotate(&p),
+            annotate(&p, &get_rt()),
             Ok(
                 aprogram(vec![
                     afun(
@@ -344,14 +350,16 @@ mod test {
         assert_eq!(
             annotate(
                 &Program::new()
-                .define("main", vec![], Expr::var("x"))),
+                .define("main", vec![], Expr::var("x")),
+                &get_rt()),
             Err("Undefined symbol: x".to_string())
         );
 
         assert_eq!(
             annotate(
                 &Program::new()
-                .define("main", vec![], Expr::call("f", vec![Expr::number(1)]))),
+                .define("main", vec![], Expr::call("f", vec![Expr::number(1)])),
+                &get_rt()),
             Err("Undefined symbol: f".to_string())
         );
     }
@@ -363,7 +371,8 @@ mod test {
                 &Program::new()
                 .define("f", vec!["x", "y"], Expr::number(0))
                 .define("main", vec![],
-                        Expr::call("f", vec![Expr::number(1)]))),
+                        Expr::call("f", vec![Expr::number(1)])),
+                &get_rt()),
             Err("function f requires 2 arguments, 1 given".to_string())
         );
 
@@ -374,7 +383,8 @@ mod test {
                 .define("main", vec![],
                         Expr::plus(
                             Expr::number(1),
-                            Expr::call("f", vec![Expr::number(1)])))),
+                            Expr::call("f", vec![Expr::number(1)]))),
+                &get_rt()),
             Err("function f requires 2 arguments, 1 given".to_string())
         );
 
@@ -383,7 +393,8 @@ mod test {
                 &Program::new()
                 .define("f", vec![], Expr::number(0))
                 .define("main", vec![],
-                        Expr::call("f", vec![Expr::number(1)]))),
+                        Expr::call("f", vec![Expr::number(1)])),
+                &get_rt()),
             Err("function f requires 0 arguments, 1 given".to_string())
         );
 
@@ -391,7 +402,8 @@ mod test {
             annotate(
                 &Program::new()
                 .define("f", vec!["x"], Expr::number(0))
-                .define("main", vec![], Expr::var("f"))),
+                .define("main", vec![], Expr::var("f")),
+                &get_rt()),
             Err("function f requires 1 arguments, 0 given".to_string())
         );
     }
@@ -401,7 +413,8 @@ mod test {
         assert_eq!(
             annotate(
                 &Program::new()
-                .define("f", vec!["x"], Expr::number(0))),
+                .define("f", vec!["x"], Expr::number(0)),
+                &get_rt()),
             Err("main function must be defined".to_string())
         );
     }
@@ -411,7 +424,8 @@ mod test {
         assert_eq!(
             annotate(
                 &Program::new()
-                .define("main", vec!["x"], Expr::number(0))),
+                .define("main", vec!["x"], Expr::number(0)),
+                &get_rt()),
             Err("main function must take no arguments".to_string())
         );
     }
@@ -455,7 +469,8 @@ mod test {
                     Expr::seq(vec![
                         Expr::call("l", vec![Expr::number(1)]),
                         Expr::call("l", vec![Expr::number(2)]),
-                    ]))
+                    ])),
+            &get_rt()
         ).unwrap();
 
         assert_eq!(
@@ -524,7 +539,8 @@ mod test {
             annotate(
                 &Program::new()
                 .define("main", vec![],
-                        Expr::call("print", vec![Expr::number(1)]))),
+                        Expr::call("print", vec![Expr::number(1)])),
+                &get_rt()),
             Ok(
                 aprogram(vec![
                     afun("main",

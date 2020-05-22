@@ -1,3 +1,4 @@
+use std::rc::Rc;
 use crate::ast::BinOp;
 use crate::sem::{AProgram, AFunSig, CallType};
 use crate::ssa::{Op, Block, BlockExit};
@@ -88,8 +89,19 @@ fn emit_function_ir(signature: &AFunSig, code: &Vec<Block>, out: &mut String) {
     out.push_str("}\n");
 }
 
-pub fn emit_ir(p: &AProgram, mut out: &mut String) {
-    out.push_str("declare i64 @rt_print(i64)\ndeclare i64 @rt_pchar(i64)\n\n");
+pub fn emit_runtime_declarations(out: &mut String, runtime: &Vec<Rc<AFunSig>>) {
+    for fsig in runtime {
+        let args_str = &(0..fsig.arity)
+            .map(|i| format!("i64 %t{}", i))
+            .collect::<Vec<_>>()
+            .join(", ");
+        out.push_str(&format!("declare i64 @rt_{}({})\n", fsig.name, args_str));
+    }
+}
+
+pub fn emit_ir(p: &AProgram, mut out: &mut String, runtime: &Vec<Rc<AFunSig>>) {
+    emit_runtime_declarations(out, runtime);
+    out.push_str("\n");
 
     for ref function in p.values() {
         let blocks = crate::ssa::emit_function(&function);
