@@ -15,7 +15,7 @@ use serde::{Deserialize};
 
 use notmlc::lexer::{lex, trim_ws};
 use notmlc::parser::parse;
-use notmlc::sem::{AFunSig, annotate};
+use notmlc::sem::{Type, AFunSig, program_to_sem};
 use notmlc::codegen::write_amd64;
 use notmlc::llvm::emit_ir;
 
@@ -115,8 +115,20 @@ fn linker_args<'a>(
 
 fn get_runtime_definitions() -> Vec<Rc<AFunSig>> {
     vec![
-        Rc::new(AFunSig { name: "print".to_string(), arity: 1, native: true }),
-        Rc::new(AFunSig { name: "pchar".to_string(), arity: 1, native: true }),
+        Rc::new(AFunSig {
+            name: "print".to_string(),
+            arity: 1,
+            arg_types: vec![Type::Int],
+            return_type: Type::Int,
+            native: true
+        }),
+        Rc::new(AFunSig {
+            name: "pchar".to_string(),
+            arity: 1,
+            arg_types: vec![Type::Int],
+            return_type: Type::Int,
+            native: true
+        }),
     ]
 }
 
@@ -184,9 +196,9 @@ fn main() -> std::io::Result<()> {
             println!("Parse: {:#?}", res);
         }
         if let Ok(pt) = res {
-            let ares = annotate(&pt, &get_runtime_definitions());
+            let ares = program_to_sem(&pt, &get_runtime_definitions());
             if verbose || ares.is_err() {
-                println!("Annotated: {:#?}", ares);
+                println!("Sem: {:#?}", ares);
             }
 
             if let Ok(at) = ares {

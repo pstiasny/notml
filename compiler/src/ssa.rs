@@ -163,11 +163,12 @@ pub fn emit_function<'a>(function: &'a AFun) -> Vec<Block> {
 mod test {
     use super::{Op, BlockExit, Block, emit_function};
     use crate::ast::BinOp;
-    use crate::sem::{CallType, abinop, aarg, anumber, afun, acond, acall, aseq};
+    use crate::sem::{Type, CallType, abinop, aarg, anumber, afun, acond, acall, aseq};
+    use Type::Int;
 
     #[test]
     fn simple() {
-        let fun = afun("foo", 1,
+        let fun = afun("foo", vec![Int], Int,
             abinop(BinOp::Plus, anumber(1), aarg(0)));
 
         assert_eq!(
@@ -195,7 +196,7 @@ mod test {
         //       if x + 10
         //         then 3
         //         else 4
-        let fun = afun("foo", 1,
+        let fun = afun("foo", vec![Int], Int,
             acond(
                 aarg(0),
                 acond(
@@ -276,7 +277,7 @@ mod test {
 
     #[test]
     fn call() {
-        let fun = afun("foo", 1,
+        let fun = afun("foo", vec![Int], Int,
             acall("bar", vec![anumber(10), anumber(20)], CallType::Regular));
 
         assert_eq!(
@@ -295,7 +296,7 @@ mod test {
 
     #[test]
     fn seq() {
-        let fun = afun("foo", 1,
+        let fun = afun("foo", vec![Int], Int,
             aseq(vec![
                 anumber(10),
                 anumber(20),

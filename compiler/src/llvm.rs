@@ -112,7 +112,7 @@ pub fn emit_ir(p: &AProgram, mut out: &mut String, runtime: &Vec<Rc<AFunSig>>) {
 
 #[cfg(test)]
 mod test {
-    use crate::sem::{AFunSig, CallType};
+    use crate::sem::{Type, AFunSig, CallType};
     use crate::ast::BinOp;
     use crate::ssa::{Block, Op, BlockExit};
     use super::emit_function_ir;
@@ -122,6 +122,8 @@ mod test {
         let sig = AFunSig {
             name: "foo".to_string(),
             arity: 1,
+            arg_types: vec![Type::Int],
+            return_type: Type::Int,
             native: false,
         };
         let code = vec![
@@ -152,6 +154,8 @@ B0:
         let sig = AFunSig {
             name: "cally".to_string(),
             arity: 1,
+            arg_types: vec![Type::Int],
+            return_type: Type::Int,
             native: false,
         };
         let code = vec![
@@ -183,6 +187,8 @@ B0:
         let sig = AFunSig {
             name: "branchy".to_string(),
             arity: 2,
+            arg_types: vec![Type::Int, Type::Int],
+            return_type: Type::Int,
             native: false,
         };
         let code = vec![

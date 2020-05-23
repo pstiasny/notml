@@ -3,7 +3,8 @@ use crate::ast::*;
 
 // Grammar:
 // E -> D ; E | eof
-// D -> sym sym* = S
+// D -> sym sym* : ( X ) -> typename = S | sym sym* = S
+// X -> typename * X | typename
 // S -> P | Q | T + T | T - T | T
 // P -> do R* S end
 // R -> S ;
@@ -203,7 +204,35 @@ fn q<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
     Ok((expr, rest))
 }
 
-fn d<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, FunDefinition> {
+fn d1<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, FunDefinition> {
+    let (sym, rest) = token(ts, TokenClass::Symbol)?;
+
+    let (args, rest) = many(&|ts| {
+        let (sym, rest) = token(ts, TokenClass::Symbol)?;
+        Ok((sym.to_string(), rest))
+    }, rest)?;
+
+    let (_, rest) = token(rest, TokenClass::Colon)?;
+    let (_, rest) = token(rest, TokenClass::LParen)?;
+    let (arg_types, rest) = x(rest)?;
+    let (_, rest) = token(rest, TokenClass::RParen)?;
+
+    let (_, rest) = token(rest, TokenClass::Arrow)?;
+    let (return_type, rest) = token(rest, TokenClass::TypeName)?;
+
+    let (_, rest) = token(rest, TokenClass::Assign)?;
+    let (expr, rest) = s(rest)?;
+
+    let fd = FunDefinition::new_typed(
+        sym,
+        args,
+        arg_types.iter().map(|s| Some(s.to_string())).collect(),
+        Some(return_type.to_string()),
+        expr);
+    Ok((fd, rest))
+}
+
+fn d2<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, FunDefinition> {
     let (sym, rest) = token(ts, TokenClass::Symbol)?;
 
     let (args, rest) = many(&|ts| {
@@ -216,6 +245,21 @@ fn d<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, FunDefinition> {
 
     let fd = FunDefinition::new(sym, args, expr);
     Ok((fd, rest))
+}
+
+fn d<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, FunDefinition> {
+    d1(ts).or_backtrack(|| d2(ts))
+}
+
+fn x<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Vec<String>> {
+    let (mut type_names, rest) = many(&|ts| {
+        let (type_name, rest) = token(ts, TokenClass::TypeName)?;
+        let (_, rest) = token(rest, TokenClass::Times)?;
+        Ok((type_name.to_string(), rest))
+    }, ts)?;
+    let (last_type_name, rest) = token(rest, TokenClass::TypeName)?;
+    type_names.push(last_type_name.to_string());
+    Ok((type_names, rest))
 }
 
 fn e<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Program> {
@@ -393,6 +437,24 @@ mod test {
                     Expr::call("f", vec![Expr::number(1)]),
                     Expr::call("g", vec![Expr::number(2)]),
                 ])),
+        ]);
+
+        assert_eq!(parse_str("f x y = 1;").definitions_vec(), vec![
+            &FunDefinition::new_typed(
+                "f",
+                vec!["x".to_string(), "y".to_string()],
+                vec![None, None],
+                None,
+                Expr::number(1)),
+        ]);
+
+        assert_eq!(parse_str("f x y: (Type1 * Type2) -> Type3 = 1;").definitions_vec(), vec![
+            &FunDefinition::new_typed(
+                "f",
+                vec!["x".to_string(), "y".to_string()],
+                vec![Some("Type1".to_string()), Some("Type2".to_string())],
+                Some("Type3".to_string()),
+                Expr::number(1))
         ]);
     }
 

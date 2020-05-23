@@ -2,6 +2,7 @@
 pub enum TokenClass {
     Number,
     Symbol,
+    TypeName,
     Assign,
     Plus,
     Minus,
@@ -13,7 +14,9 @@ pub enum TokenClass {
     Else,
     Do,
     End,
+    Colon,
     Semicolon,
+    Arrow,
     WS,
     EOF,
 }
@@ -37,15 +40,17 @@ fn transitions(state: u8, chr: Option<char>) -> &'static [u8] {
                 't' => &[100, 13],
                 'e' => &[100, 17, 24],
                 'd' => &[100, 22],
-                'a'..='z'| 'A'..='Z' | '_' => &[100],
+                'a'..='z'| '_' => &[100],
+                'A'..='Z' => &[28],
                 ' ' | '\n' => &[2],
                 '=' => &[4],
                 '(' => &[5],
                 ')' => &[6],
                 '+' => &[7],
-                '-' => &[21],
+                '-' => &[21, 29],
                 '*' => &[8],
                 '0'..='9' => &[9],
+                ':' => &[27],
                 ';' => &[10],
                 _ => &[],
             },
@@ -54,6 +59,8 @@ fn transitions(state: u8, chr: Option<char>) -> &'static [u8] {
                 ' ' | '\n' => &[2],
                 _ => &[],
             }
+
+            29 => match c { '>' => &[30], _ => &[], }
 
             9 => match c { '0'..='9' => &[9], _ => &[], }
 
@@ -72,6 +79,10 @@ fn transitions(state: u8, chr: Option<char>) -> &'static [u8] {
             24 => match c { 'n' => &[25], _ => &[], }
             25 => match c { 'd' => &[26], _ => &[], }
 
+            28 => match c {
+                'a'..='z'| 'A'..='Z' | '0'..='9' | '_' => &[28],
+                _ => &[],
+            }
             100 => match c {
                 'a'..='z'| 'A'..='Z' | '0'..='9' | '_' => &[100],
                 _ => &[],
@@ -100,6 +111,9 @@ fn accepting(state: u8) -> &'static Option<TokenClass> {
         21 => &Some(TokenClass::Minus),
         23 => &Some(TokenClass::Do),
         26 => &Some(TokenClass::End),
+        27 => &Some(TokenClass::Colon),
+        28 => &Some(TokenClass::TypeName),
+        30 => &Some(TokenClass::Arrow),
         100 => &Some(TokenClass::Symbol),
         _ => &None,
     }
@@ -251,6 +265,19 @@ mod test {
             Token(TokenClass::Semicolon, ";",  Position(2, 4)),
             Token(TokenClass::WS,        "\n", Position(2, 5)),
             Token(TokenClass::EOF,       "",   Position(3, 1)),
+        ]));
+    }
+
+    #[test]
+    fn typesig() {
+        assert_eq!(lex("abc: ABc->D"), Ok(vec![
+            Token(TokenClass::Symbol,    "abc",  Position(1, 1)),
+            Token(TokenClass::Colon,     ":",    Position(1, 4)),
+            Token(TokenClass::WS,        " ",    Position(1, 5)),
+            Token(TokenClass::TypeName,  "ABc",  Position(1, 6)),
+            Token(TokenClass::Arrow,     "->",   Position(1, 9)),
+            Token(TokenClass::TypeName,  "D",    Position(1, 11)),
+            Token(TokenClass::EOF,       "",     Position(1, 12)),
         ]));
     }
 }

@@ -50,6 +50,8 @@ impl Expr {
 pub struct FunDefinition {
     pub fname: String,
     pub arg_names: Vec<String>,
+    pub arg_types: Vec<Option<String>>,
+    pub return_type: Option<String>,
     pub code: Box<Expr>,
 }
 
@@ -57,7 +59,24 @@ impl FunDefinition {
     pub fn new(fname: &str, arg_names: Vec<String>, code: Expr) -> FunDefinition {
         FunDefinition {
             fname: fname.to_string(),
+            arg_types: vec![None; arg_names.len()],
             arg_names: arg_names,
+            return_type: None,
+            code: Box::new(code),
+        }
+    }
+    pub fn new_typed(
+        fname: &str,
+        arg_names: Vec<String>,
+        arg_types: Vec<Option<String>>,
+        return_type: Option<String>,
+        code: Expr
+    ) -> FunDefinition {
+        FunDefinition {
+            fname: fname.to_string(),
+            arg_names,
+            arg_types,
+            return_type,
             code: Box::new(code),
         }
     }
@@ -87,6 +106,25 @@ impl Program {
         let fd = FunDefinition {
             fname: fname.to_string(),
             arg_names: arg_names.iter().map(|&s| s.to_string()).collect(),
+            arg_types: vec![None; arg_names.len()],
+            return_type: None,
+            code: Box::new(code),
+        };
+        self.append(fd)
+    }
+    pub fn define_typed(
+        &mut self,
+        fname: &str,
+        arg_names: Vec<&str>,
+        arg_types: Vec<Option<String>>,
+        return_type: Option<String>,
+        code: Expr
+    ) -> Program {
+        let fd = FunDefinition {
+            fname: fname.to_string(),
+            arg_names: arg_names.iter().map(|&s| s.to_string()).collect(),
+            arg_types: arg_types,
+            return_type: return_type,
             code: Box::new(code),
         };
         self.append(fd)
