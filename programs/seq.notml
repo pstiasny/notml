@@ -1,9 +1,9 @@
-loop n = if n > 0
+loop n = if n >= 0
   then
-    do print (n + 1);
+    do print n;
        loop (n - 1)
     end
   else
     0;
 
-main = loop 9;
+main = loop 10;
