@@ -15,6 +15,7 @@ pub enum CallType {
 pub enum Type {
     Int,
     Bool,
+    Object,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -265,6 +266,7 @@ fn parse_type(typename: &Option<String>) -> Result<Type, String> {
         Some(s) => match s.as_str() {
             "Int" => Ok(Int),
             "Bool" => Ok(Bool),
+            "Object" => Ok(Object),
             _ => Err(format!("unknown type {:?}", typename))
         }
         None => Ok(Int),

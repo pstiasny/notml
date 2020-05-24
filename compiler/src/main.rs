@@ -130,6 +130,41 @@ fn get_runtime_definitions() -> Vec<Rc<AFunSig>> {
             return_type: Type::Int,
             native: true
         }),
+        Rc::new(AFunSig {
+            name: "nil".to_string(),
+            arity: 0,
+            arg_types: vec![],
+            return_type: Type::Object,
+            native: true
+        }),
+        Rc::new(AFunSig {
+            name: "is_nil".to_string(),
+            arity: 1,
+            arg_types: vec![Type::Object],
+            return_type: Type::Bool,
+            native: true
+        }),
+        Rc::new(AFunSig {
+            name: "cons".to_string(),
+            arity: 2,
+            arg_types: vec![Type::Int, Type::Object],
+            return_type: Type::Object,
+            native: true
+        }),
+        Rc::new(AFunSig {
+            name: "head".to_string(),
+            arity: 1,
+            arg_types: vec![Type::Object],
+            return_type: Type::Int,
+            native: true
+        }),
+        Rc::new(AFunSig {
+            name: "tail".to_string(),
+            arity: 1,
+            arg_types: vec![Type::Object],
+            return_type: Type::Object,
+            native: true
+        }),
     ]
 }
 

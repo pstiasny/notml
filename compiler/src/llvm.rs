@@ -8,6 +8,7 @@ fn type_str(t: &Type) -> &'static str {
     match *t {
         Type::Int => "i64",
         Type::Bool => "i1",
+        Type::Object => "i8*",
     }
 }
 
@@ -110,11 +111,13 @@ fn emit_function_ir(signature: &AFunSig, code: &Vec<Block>, out: &mut String) {
 
 pub fn emit_runtime_declarations(out: &mut String, runtime: &Vec<Rc<AFunSig>>) {
     for fsig in runtime {
-        let args_str = &(0..fsig.arity)
-            .map(|i| format!("i64 %t{}", i))
+        let args_str = fsig.arg_types.iter().enumerate()
+            .map(|(i, ty)| format!("{} %t{}", type_str(ty), i))
             .collect::<Vec<_>>()
             .join(", ");
-        out.push_str(&format!("declare i64 @rt_{}({})\n", fsig.name, args_str));
+        out.push_str(&format!(
+            "declare {} @rt_{}({})\n",
+            type_str(&fsig.return_type), fsig.name, args_str));
     }
 }
 

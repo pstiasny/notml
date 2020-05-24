@@ -92,3 +92,10 @@ fn seq() {
 0
 ");
 }
+
+#[test]
+fn list() {
+    let dir = tempdir().unwrap();
+    let program_assert = run_program("list", dir);
+    program_assert.success().stdout("1234");
+}

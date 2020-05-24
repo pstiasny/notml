@@ -1,0 +1,8 @@
+make_list: Object = cons 1000 (cons 200 (cons 30 (cons 4 nil)));
+
+list_sum xs acc: (Object * Int) -> Int =
+  if is_nil xs
+    then acc
+    else list_sum (tail xs) (acc + head xs);
+
+main = print (list_sum make_list 0);
