@@ -1,5 +1,5 @@
 use crate::ast::BinOp;
-use crate::sem::{AAST, AFun, AExpr, CallType};
+use crate::sem::{Type, GAST, GFun, AExpr, CallType};
 
 
 type Register = u64;
@@ -12,7 +12,9 @@ pub enum Op {
           left: Register, left_block: BlockId,
           right: Register, right_block: BlockId },
     Const { dst: Register, value: i32 },
-    Call { dst: Register, function: String, args: Vec<Register>, call_type: CallType },
+    Call { dst: Register, function: String, args: Vec<Register>,
+           call_type: CallType,
+           arg_types: Vec<Type>, return_type: Type },
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -36,10 +38,10 @@ struct FunctionEnv {
 impl Op {
     pub fn dst(&self) -> Register {
         match self {
-            Self::Binary { dst, left: _, right: _, operator: _ } => *dst,
-            Self::Phi { dst, left: _, left_block: _, right: _, right_block: _ } => *dst,
-            Self::Const { dst, value: _ } => *dst,
-            Self::Call { dst, function: _, args: _, call_type: _ } => *dst,
+            Self::Binary { dst, .. } => *dst,
+            Self::Phi { dst, .. } => *dst,
+            Self::Const { dst, .. } => *dst,
+            Self::Call { dst, .. } => *dst,
         }
     }
 }
@@ -54,7 +56,7 @@ impl Block {
 }
 
 impl FunctionEnv {
-    fn new(function: &AFun) -> FunctionEnv {
+    fn new(function: &GFun<Type>) -> FunctionEnv {
         FunctionEnv {
             register_counter: function.arity() as u64,  // registers 0..arity will store arguments
             blocks: vec![ Block::new(BlockExit::Return(function.arity() as u64)) ],
@@ -86,7 +88,7 @@ impl FunctionEnv {
 }
 
 
-fn emit_expr<'a>(e: &AAST, mut env: &mut FunctionEnv) -> u64 {
+fn emit_expr<'a>(e: &GAST<Type>, mut env: &mut FunctionEnv) -> u64 {
     match *e.0 {
         AExpr::Number(value) => {
             let dst = env.fresh_register();
@@ -108,7 +110,12 @@ fn emit_expr<'a>(e: &AAST, mut env: &mut FunctionEnv) -> u64 {
             }
 
             env.push_op(
-                Op::Call { dst, function: (*name).clone(), args, call_type: *call_type });
+                Op::Call {
+                    dst, function: (*name).clone(), args,
+                    call_type: *call_type,
+                    arg_types: arg_exprs.iter().map(|e| e.1).collect(),
+                    return_type: e.1,
+                });
             dst
         }
         AExpr::Arg(idx) => {
@@ -152,7 +159,7 @@ fn emit_expr<'a>(e: &AAST, mut env: &mut FunctionEnv) -> u64 {
 }
 
 
-pub fn emit_function<'a>(function: &'a AFun) -> Vec<Block> {
+pub fn emit_function<'a>(function: &'a GFun<Type>) -> Vec<Block> {
     let mut env = FunctionEnv::new(&function);
     let res_reg = emit_expr(&function.code(), &mut env);
     env.current_block_mut().exit = BlockExit::Return(res_reg);
@@ -163,13 +170,13 @@ pub fn emit_function<'a>(function: &'a AFun) -> Vec<Block> {
 mod test {
     use super::{Op, BlockExit, Block, emit_function};
     use crate::ast::BinOp;
-    use crate::sem::{Type, CallType, abinop, aarg, anumber, afun, acond, acall, aseq};
+    use crate::sem::{Type, CallType, gbinop, garg, gnumber, afun, gcond, gcall, gseq};
     use Type::Int;
 
     #[test]
     fn simple() {
         let fun = afun("foo", vec![Int], Int,
-            abinop(BinOp::Plus, anumber(1), aarg(0)));
+            gbinop(BinOp::Plus, gnumber(1, Int), garg(0, Int), Int));
 
         assert_eq!(
             emit_function(&fun),
@@ -197,16 +204,16 @@ mod test {
         //         then 3
         //         else 4
         let fun = afun("foo", vec![Int], Int,
-            acond(
-                aarg(0),
-                acond(
-                    abinop(BinOp::Minus, anumber(10), aarg(0)),
-                    anumber(1),
-                    anumber(2)),
-                acond(
-                    abinop(BinOp::Plus, aarg(0), anumber(10)),
-                    anumber(3),
-                    anumber(4))));
+            gcond(
+                garg(0, Int),
+                gcond(
+                    gbinop(BinOp::Minus, gnumber(10, Int), garg(0, Int), Int),
+                    gnumber(1, Int),
+                    gnumber(2, Int), Int),
+                gcond(
+                    gbinop(BinOp::Plus, garg(0, Int), gnumber(10, Int), Int),
+                    gnumber(3, Int),
+                    gnumber(4, Int), Int), Int));
 
         assert_eq!(
             emit_function(&fun),
@@ -278,7 +285,7 @@ mod test {
     #[test]
     fn call() {
         let fun = afun("foo", vec![Int], Int,
-            acall("bar", vec![anumber(10), anumber(20)], CallType::Regular));
+            gcall("bar", vec![gnumber(10, Int), gnumber(20, Int)], CallType::Regular, Int));
 
         assert_eq!(
             emit_function(&fun),
@@ -287,7 +294,11 @@ mod test {
                     ops: vec![
                         Op::Const { dst: 2, value: 10 },
                         Op::Const { dst: 3, value: 20 },
-                        Op::Call { dst: 1, function: "bar".to_string(), args: vec![2, 3], call_type: CallType::Regular },
+                        Op::Call {
+                            dst: 1, function: "bar".to_string(), args: vec![2, 3],
+                            call_type: CallType::Regular,
+                            arg_types: vec![Int, Int], return_type: Int,
+                        },
                     ],
                     exit: BlockExit::Return(1)
                 },
@@ -297,10 +308,10 @@ mod test {
     #[test]
     fn seq() {
         let fun = afun("foo", vec![Int], Int,
-            aseq(vec![
-                anumber(10),
-                anumber(20),
-            ]));
+            gseq(vec![
+                gnumber(10, Int),
+                gnumber(20, Int),
+            ], Int));
 
         assert_eq!(
             emit_function(&fun),

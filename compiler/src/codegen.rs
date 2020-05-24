@@ -92,6 +92,7 @@ fn write_expr_amd64(e: &AAST, env: &FunctionEnv, w: &mut dyn Write) -> std::io::
                 BinOp::Plus => w.write_all(b"add rax, rdi\n"),
                 BinOp::Minus => w.write_all(b"sub rax, rdi\n"),
                 BinOp::Times => w.write_all(b"mul rdi\n"),
+                _ => unimplemented!(),
             }?;
             w.write_all(b"push rax\n")?;
         },

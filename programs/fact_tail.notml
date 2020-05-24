@@ -1,4 +1,4 @@
-factrec n acc = if n - 1
+factrec n acc = if n > 1
   then factrec (n - 1) (n * acc)
   else acc;
 

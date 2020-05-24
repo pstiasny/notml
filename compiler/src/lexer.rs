@@ -7,6 +7,15 @@ pub enum TokenClass {
     Plus,
     Minus,
     Times,
+    Div,
+    Mod,
+    Eq,
+    Gt,
+    Gte,
+    Lt,
+    Lte,
+    And,
+    Or,
     LParen,
     RParen,
     If,
@@ -36,19 +45,25 @@ fn transitions(state: u8, chr: Option<char>) -> &'static [u8] {
 
         Some(c) => match state {
             0 => match c {
+                'a' => &[100, 43],
+                'o' => &[100, 44],
                 'i' => &[100, 11],
                 't' => &[100, 13],
                 'e' => &[100, 17, 24],
                 'd' => &[100, 22],
-                'a'..='z'| '_' => &[100],
+                'm' => &[100, 40],
+                'b'..='z'| '_' => &[100],
                 'A'..='Z' => &[28],
                 ' ' | '\n' => &[2],
-                '=' => &[4],
+                '=' => &[4, 31],
+                '>' => &[33, 34],
+                '<' => &[35, 36],
                 '(' => &[5],
                 ')' => &[6],
                 '+' => &[7],
                 '-' => &[21, 29],
                 '*' => &[8],
+                '/' => &[39],
                 '0'..='9' => &[9],
                 ':' => &[27],
                 ';' => &[10],
@@ -61,6 +76,9 @@ fn transitions(state: u8, chr: Option<char>) -> &'static [u8] {
             }
 
             29 => match c { '>' => &[30], _ => &[], }
+            31 => match c { '=' => &[32], _ => &[], }
+            34 => match c { '=' => &[37], _ => &[], }
+            36 => match c { '=' => &[38], _ => &[], }
 
             9 => match c { '0'..='9' => &[9], _ => &[], }
 
@@ -78,6 +96,14 @@ fn transitions(state: u8, chr: Option<char>) -> &'static [u8] {
 
             24 => match c { 'n' => &[25], _ => &[], }
             25 => match c { 'd' => &[26], _ => &[], }
+
+            40 => match c { 'o' => &[41], _ => &[], }
+            41 => match c { 'd' => &[42], _ => &[], }
+
+            43 => match c { 'n' => &[45], _ => &[], }
+            45 => match c { 'd' => &[46], _ => &[], }
+
+            44 => match c { 'r' => &[47], _ => &[], }
 
             28 => match c {
                 'a'..='z'| 'A'..='Z' | '0'..='9' | '_' => &[28],
@@ -114,6 +140,15 @@ fn accepting(state: u8) -> &'static Option<TokenClass> {
         27 => &Some(TokenClass::Colon),
         28 => &Some(TokenClass::TypeName),
         30 => &Some(TokenClass::Arrow),
+        32 => &Some(TokenClass::Eq),
+        33 => &Some(TokenClass::Gt),
+        35 => &Some(TokenClass::Lt),
+        37 => &Some(TokenClass::Gte),
+        38 => &Some(TokenClass::Lte),
+        39 => &Some(TokenClass::Div),
+        42 => &Some(TokenClass::Mod),
+        46 => &Some(TokenClass::And),
+        47 => &Some(TokenClass::Or),
         100 => &Some(TokenClass::Symbol),
         _ => &None,
     }
@@ -190,7 +225,7 @@ mod test {
 
     #[test]
     fn sequence() {
-        assert_eq!(lex("seq=(foo bar x1  1234+4 +- 5*90);"), Ok(vec![
+        assert_eq!(lex("seq=(foo bar x1  1234+4 +- 5*90/1 mod 9);"), Ok(vec![
             Token(TokenClass::Symbol,   "seq",  Position(1, 1)),
             Token(TokenClass::Assign,   "=",    Position(1, 4)),
             Token(TokenClass::LParen,   "(",    Position(1, 5)),
@@ -210,11 +245,20 @@ mod test {
             Token(TokenClass::Number,   "5",    Position(1, 28)),
             Token(TokenClass::Times,    "*",    Position(1, 29)),
             Token(TokenClass::Number,   "90",   Position(1, 30)),
-            Token(TokenClass::RParen,   ")",    Position(1, 32)),
-            Token(TokenClass::Semicolon, ";",   Position(1, 33)),
-            Token(TokenClass::EOF,       "",    Position(1, 34)),
+            Token(TokenClass::Div,      "/",    Position(1, 32)),
+            Token(TokenClass::Number,   "1",    Position(1, 33)),
+            Token(TokenClass::WS,       " ",    Position(1, 34)),
+            Token(TokenClass::Mod,      "mod",  Position(1, 35)),
+            Token(TokenClass::WS,       " ",    Position(1, 38)),
+            Token(TokenClass::Number,   "9",    Position(1, 39)),
+            Token(TokenClass::RParen,   ")",    Position(1, 40)),
+            Token(TokenClass::Semicolon, ";",   Position(1, 41)),
+            Token(TokenClass::EOF,       "",    Position(1, 42)),
         ]));
+    }
 
+    #[test]
+    fn cond() {
         assert_eq!(lex("if iff then thenn else elsee do end"), Ok(vec![
             Token(TokenClass::If,     "if",    Position(1, 1)),
             Token(TokenClass::WS,     " ",     Position(1, 3)),
@@ -232,6 +276,26 @@ mod test {
             Token(TokenClass::WS,     " ",     Position(1, 32)),
             Token(TokenClass::End,    "end",   Position(1, 33)),
             Token(TokenClass::EOF,    "",      Position(1, 36)),
+        ]));
+    }
+
+    #[test]
+    fn binop() {
+        assert_eq!(lex("= ==<> <= >= and or"), Ok(vec![
+            Token(TokenClass::Assign, "=",     Position(1, 1)),
+            Token(TokenClass::WS,     " ",     Position(1, 2)),
+            Token(TokenClass::Eq,     "==",    Position(1, 3)),
+            Token(TokenClass::Lt,     "<",     Position(1, 5)),
+            Token(TokenClass::Gt,     ">",     Position(1, 6)),
+            Token(TokenClass::WS,     " ",     Position(1, 7)),
+            Token(TokenClass::Lte,    "<=",    Position(1, 8)),
+            Token(TokenClass::WS,     " ",     Position(1, 10)),
+            Token(TokenClass::Gte,    ">=",    Position(1, 11)),
+            Token(TokenClass::WS,     " ",     Position(1, 13)),
+            Token(TokenClass::And,    "and",   Position(1, 14)),
+            Token(TokenClass::WS,     " ",     Position(1, 17)),
+            Token(TokenClass::Or,     "or",    Position(1, 18)),
+            Token(TokenClass::EOF,    "",      Position(1, 20)),
         ]));
     }
 

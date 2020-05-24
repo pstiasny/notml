@@ -1,4 +1,4 @@
-loop n = if n
+loop n = if n > 0
   then
     do print (n + 1);
        loop (n - 1)

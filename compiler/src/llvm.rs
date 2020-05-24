@@ -1,7 +1,15 @@
 use std::rc::Rc;
 use crate::ast::BinOp;
-use crate::sem::{AProgram, AFunSig, CallType};
+use crate::sem::{GProgram, Type, AFunSig, CallType};
 use crate::ssa::{Op, Block, BlockExit};
+
+
+fn type_str(t: &Type) -> &'static str {
+    match *t {
+        Type::Int => "i64",
+        Type::Bool => "i1",
+    }
+}
 
 
 fn emit_function_ir(signature: &AFunSig, code: &Vec<Block>, out: &mut String) {
@@ -17,9 +25,11 @@ fn emit_function_ir(signature: &AFunSig, code: &Vec<Block>, out: &mut String) {
     }
 
     // function signature
-    out.push_str(&format!("define i64 @{}(", signature.name));
+    out.push_str(&format!("define {} @{}(", type_str(&signature.return_type), signature.name));
     out.push_str(
-        &(0..signature.arity).map(|i| format!("i64 %t{}", i)).collect::<Vec<_>>().join(", "));
+        &(0..signature.arity)
+        .map(|i| format!("{} %t{}", type_str(&signature.arg_types[i as usize]), i))
+        .collect::<Vec<_>>().join(", "));
     out.push_str(") {\n");
 
     // output blocks of ops
@@ -30,11 +40,22 @@ fn emit_function_ir(signature: &AFunSig, code: &Vec<Block>, out: &mut String) {
             match op {
                 Op::Binary { dst, left, right, operator } => {
                     let op_str = match operator {
-                        BinOp::Minus => "sub",
-                        BinOp::Plus => "add",
-                        BinOp::Times => "mul",
+                        BinOp::Minus => "sub i64",
+                        BinOp::Plus => "add i64",
+                        BinOp::Times => "mul i64",
+                        BinOp::Div => "sdiv i64",
+                        BinOp::Mod => "srem i64",
+                        BinOp::Eq => "icmp eq i64",
+                        BinOp::Gt => "icmp sgt i64",
+                        BinOp::Gte => "icmp sge i64",
+                        BinOp::Lt => "icmp slt i64",
+                        BinOp::Lte => "icmp sle i64",
+                        BinOp::And => "and i1",
+                        BinOp::Or => "or i1",
                     };
-                    out.push_str(&format!("  %t{} = {} i64 %t{}, %t{}\n", dst, op_str, left, right));
+                    out.push_str(&format!(
+                        "  %t{} = {} %t{}, %t{}\n",
+                        dst, op_str, left, right));
                 }
                 Op::Phi { dst, left, left_block, right, right_block } => {
                     out.push_str(&format!(
@@ -48,13 +69,14 @@ fn emit_function_ir(signature: &AFunSig, code: &Vec<Block>, out: &mut String) {
                         "  %t{} = load i64, i64* @{}.c{}\n",
                         dst, signature.name, dst));
                 }
-                Op::Call { dst, function, args, call_type } => {
+                Op::Call { dst, function, args, call_type, arg_types, return_type } => {
                     let fname = match call_type {
                         CallType::Native => format!("rt_{}", function),
                         _ => function.clone(),
                     };
-                    let args_str = args.iter()
-                        .map(|arg_reg| format!("i64 %t{}", arg_reg))
+                    let args_str = arg_types.iter().zip(args.iter())
+                        .map(|(arg_type, arg_reg)|
+                            format!("{} %t{}", type_str(arg_type), arg_reg))
                         .collect::<Vec<_>>()
                         .join(", ");
                     let prefix = match call_type {
@@ -62,26 +84,23 @@ fn emit_function_ir(signature: &AFunSig, code: &Vec<Block>, out: &mut String) {
                         _ => "",
                     };
                     out.push_str(&format!(
-                        "  %t{} = {}call i64 @{}({})\n",
-                        dst, prefix, fname, args_str));
+                        "  %t{} = {}call {} @{}({})\n",
+                        dst, prefix, type_str(&return_type), fname, args_str));
                 }
             }
         }
 
         match block.exit {
             BlockExit::Return(reg) => {
-                out.push_str(&format!("  ret i64 %t{}\n", reg));
+                out.push_str(&format!("  ret {} %t{}\n", type_str(&signature.return_type), reg));
             }
             BlockExit::UnconditionalJump(block_id) => {
                 out.push_str(&format!("  br label %B{}\n", block_id));
             }
             BlockExit::Branch(reg, block_positive, block_negative) => {
                 out.push_str(&format!(
-                    "  %B{}.cond = icmp sge i64 %t{}, 0\n",
-                    block_id, reg));
-                out.push_str(&format!(
-                    "  br i1 %B{}.cond, label %B{}, label %B{}\n",
-                    block_id, block_positive, block_negative));
+                    "  br i1 %t{}, label %B{}, label %B{}\n",
+                    reg, block_positive, block_negative));
             }
         }
     }
@@ -99,7 +118,7 @@ pub fn emit_runtime_declarations(out: &mut String, runtime: &Vec<Rc<AFunSig>>) {
     }
 }
 
-pub fn emit_ir(p: &AProgram, mut out: &mut String, runtime: &Vec<Rc<AFunSig>>) {
+pub fn emit_ir(p: &GProgram<Type>, mut out: &mut String, runtime: &Vec<Rc<AFunSig>>) {
     emit_runtime_declarations(out, runtime);
     out.push_str("\n");
 
@@ -161,9 +180,21 @@ B0:
         let code = vec![
             Block {
                 ops: vec![
-                    Op::Call { dst: 3, function: "bar".to_string(), args: vec![0], call_type: CallType::Regular },
-                    Op::Call { dst: 2, function: "print".to_string(), args: vec![3], call_type: CallType::Native },
-                    Op::Call { dst: 1, function: "cally".to_string(), args: vec![2], call_type: CallType::Tail },
+                    Op::Call {
+                        dst: 3, function: "bar".to_string(), args: vec![0],
+                        call_type: CallType::Regular,
+                        arg_types: vec![Type::Int], return_type: Type::Bool,
+                    },
+                    Op::Call {
+                        dst: 2, function: "foo".to_string(), args: vec![3],
+                        call_type: CallType::Native,
+                        arg_types: vec![Type::Bool], return_type: Type::Int,
+                    },
+                    Op::Call {
+                        dst: 1, function: "cally".to_string(), args: vec![2],
+                        call_type: CallType::Tail,
+                        arg_types: vec![Type::Int], return_type: Type::Int,
+                    },
                 ],
                 exit: BlockExit::Return(1)
             },
@@ -174,8 +205,8 @@ B0:
 
         assert_eq!(out, "define i64 @cally(i64 %t0) {
 B0:
-  %t3 = call i64 @bar(i64 %t0)
-  %t2 = call i64 @rt_print(i64 %t3)
+  %t3 = call i1 @bar(i64 %t0)
+  %t2 = call i64 @rt_foo(i1 %t3)
   %t1 = tail call i64 @cally(i64 %t2)
   ret i64 %t1
 }
@@ -193,12 +224,14 @@ B0:
         };
         let code = vec![
             Block {
-                ops: vec![],
-                exit: BlockExit::Branch(0, 1, 2)
+                ops: vec![
+                    Op::Binary { dst: 2, left: 0, right: 1, operator: BinOp::Gt },
+                ],
+                exit: BlockExit::Branch(2, 1, 2)
             },
             Block {
                 ops: vec![
-                    Op::Binary { dst: 2, left: 0, right: 1, operator: BinOp::Plus },
+                    Op::Binary { dst: 3, left: 0, right: 1, operator: BinOp::Plus },
                 ],
                 exit: BlockExit::UnconditionalJump(3)
             },
@@ -208,7 +241,7 @@ B0:
             },
             Block {
                 ops: vec![
-                    Op::Phi { dst: 4, left: 2, left_block: 1, right: 0, right_block: 2 },
+                    Op::Phi { dst: 4, left: 3, left_block: 1, right: 0, right_block: 2 },
                 ],
                 exit: BlockExit::Return(4)
             },
@@ -219,15 +252,15 @@ B0:
 
         assert_eq!(out, "define i64 @branchy(i64 %t0, i64 %t1) {
 B0:
-  %B0.cond = icmp sge i64 %t0, 0
-  br i1 %B0.cond, label %B1, label %B2
+  %t2 = icmp sgt i64 %t0, %t1
+  br i1 %t2, label %B1, label %B2
 B1:
-  %t2 = add i64 %t0, %t1
+  %t3 = add i64 %t0, %t1
   br label %B3
 B2:
   br label %B3
 B3:
-  %t4 = phi i64 [%t2, %B1], [%t0, %B2]
+  %t4 = phi i64 [%t3, %B1], [%t0, %B2]
   ret i64 %t4
 }
 ");

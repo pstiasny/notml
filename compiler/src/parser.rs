@@ -3,13 +3,17 @@ use crate::ast::*;
 
 // Grammar:
 // E -> D ; E | eof
-// D -> sym sym* : ( X ) -> typename = S | sym sym* = S
+// D -> sym sym* : ( X ) -> typename = S | sym : typename = S | sym sym* = S
 // X -> typename * X | typename
-// S -> P | Q | T + T | T - T | T
+// S -> P | Q | A L A | A
+// L -> and | or
+// A -> Z K Z | Z
+// K -> > | < | >= | <= | ==
+// Z -> T + T | T - T | T
 // P -> do R* S end
 // R -> S ;
 // Q -> if S then S else S
-// T -> U * T | U
+// T -> U * T | U / T | U mod T | U
 // U -> C | V
 // V -> ( S ) | number | sym
 // C -> sym V*
@@ -129,12 +133,28 @@ fn t1<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
 }
 
 fn t2<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
+    let (expr1, rest) = u(ts)?;
+    let (_, rest) = token(rest, TokenClass::Div)?;
+    let (expr2, rest) = t(rest)?;
+    Ok((Expr::binop(BinOp::Div, expr1, expr2), rest))
+}
+
+fn t3<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
+    let (expr1, rest) = u(ts)?;
+    let (_, rest) = token(rest, TokenClass::Mod)?;
+    let (expr2, rest) = t(rest)?;
+    Ok((Expr::binop(BinOp::Mod, expr1, expr2), rest))
+}
+
+fn t4<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
     u(ts)
 }
 
 fn t<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
     t1(ts)
         .or_backtrack(|| {t2(ts)})
+        .or_backtrack(|| {t3(ts)})
+        .or_backtrack(|| {t4(ts)})
 }
 
 fn s1<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
@@ -146,24 +166,15 @@ fn s2<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
 }
 
 fn s3<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
-    let (expr1, rest) = t(ts)?;
-    let (_, rest) = token(rest, TokenClass::Plus)?;
-    let (expr2, rest) = t(rest)?;
-    let expr = Expr::plus(expr1, expr2);
+    let (expr1, rest) = a(ts)?;
+    let (op, rest) = l(rest)?;
+    let (expr2, rest) = a(rest)?;
+    let expr = Expr::binop(op, expr1, expr2);
     Ok((expr, rest))
 }
 
 fn s4<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
-    let (expr1, rest) = t(ts)?;
-    let (_, rest) = token(rest, TokenClass::Minus)?;
-    let (expr2, rest) = t(rest)?;
-    let expr = Expr::minus(expr1, expr2);
-    Ok((expr, rest))
-}
-
-fn s5<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
-    let expr = t(ts);
-    expr
+    a(ts)
 }
 
 fn s<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
@@ -171,7 +182,60 @@ fn s<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
         .or_backtrack(|| s2(ts))
         .or_backtrack(|| s3(ts))
         .or_backtrack(|| s4(ts))
-        .or_backtrack(|| s5(ts))
+}
+
+fn l<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, BinOp> {
+    token(ts, TokenClass::And).map(|(_, rest)| (BinOp::And, rest))
+    .or_backtrack(|| token(ts, TokenClass::Or).map(|(_, rest)| (BinOp::Or, rest)))
+}
+
+fn a1<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
+    let (expr1, rest) = z(ts)?;
+    let (op, rest) = k(rest)?;
+    let (expr2, rest) = z(rest)?;
+    let expr = Expr::binop(op, expr1, expr2);
+    Ok((expr, rest))
+}
+
+fn a2<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
+    z(ts)
+}
+
+fn a<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
+    a1(ts).or_backtrack(|| a2(ts))
+}
+
+fn k<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, BinOp> {
+    token(ts, TokenClass::Gt).map(|(_, rest)| (BinOp::Gt, rest))
+    .or_backtrack(|| token(ts, TokenClass::Lt).map(|(_, rest)| (BinOp::Lt, rest)))
+    .or_backtrack(|| token(ts, TokenClass::Gte).map(|(_, rest)| (BinOp::Gte, rest)))
+    .or_backtrack(|| token(ts, TokenClass::Lte).map(|(_, rest)| (BinOp::Lte, rest)))
+    .or_backtrack(|| token(ts, TokenClass::Eq).map(|(_, rest)| (BinOp::Eq, rest)))
+}
+
+fn z1<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
+    let (expr1, rest) = t(ts)?;
+    let (_, rest) = token(rest, TokenClass::Plus)?;
+    let (expr2, rest) = t(rest)?;
+    let expr = Expr::plus(expr1, expr2);
+    Ok((expr, rest))
+}
+
+fn z2<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
+    let (expr1, rest) = t(ts)?;
+    let (_, rest) = token(rest, TokenClass::Minus)?;
+    let (expr2, rest) = t(rest)?;
+    let expr = Expr::minus(expr1, expr2);
+    Ok((expr, rest))
+}
+
+fn z3<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
+    let expr = t(ts);
+    expr
+}
+
+fn z<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
+    z1(ts).or_backtrack(|| z2(ts)).or_backtrack(|| z3(ts))
 }
 
 fn p<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
@@ -240,6 +304,29 @@ fn d2<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, FunDefinition> {
         Ok((sym.to_string(), rest))
     }, rest)?;
 
+    let (_, rest) = token(rest, TokenClass::Colon)?;
+    let (return_type, rest) = token(rest, TokenClass::TypeName)?;
+
+    let (_, rest) = token(rest, TokenClass::Assign)?;
+    let (expr, rest) = s(rest)?;
+
+    let fd = FunDefinition::new_typed(
+        sym,
+        args,
+        vec![],
+        Some(return_type.to_string()),
+        expr);
+    Ok((fd, rest))
+}
+
+fn d3<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, FunDefinition> {
+    let (sym, rest) = token(ts, TokenClass::Symbol)?;
+
+    let (args, rest) = many(&|ts| {
+        let (sym, rest) = token(ts, TokenClass::Symbol)?;
+        Ok((sym.to_string(), rest))
+    }, rest)?;
+
     let (_, rest) = token(rest, TokenClass::Assign)?;
     let (expr, rest) = s(rest)?;
 
@@ -248,7 +335,7 @@ fn d2<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, FunDefinition> {
 }
 
 fn d<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, FunDefinition> {
-    d1(ts).or_backtrack(|| d2(ts))
+    d1(ts).or_backtrack(|| d2(ts)).or_backtrack(|| d3(ts))
 }
 
 fn x<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Vec<String>> {
@@ -287,7 +374,7 @@ pub fn parse(ts: &[Token]) -> Result<Program, ParseError> {
 #[cfg(test)]
 mod test {
     use crate::lexer::{Position, lex, trim_ws};
-    use crate::ast::{Program, FunDefinition, Expr};
+    use crate::ast::{Program, FunDefinition, Expr, BinOp};
     use super::{ParseError, parse};
 
     fn parse_str(s: &str) -> Program {
@@ -379,6 +466,20 @@ mod test {
                     Expr::plus(Expr::number(2), Expr::number(3)))),
         ]);
 
+        assert_eq!(parse_str("f = 1 * 2 + 3 > 5 - 6;").definitions_vec(), vec![
+            &FunDefinition::new(
+                "f",
+                vec![],
+                Expr::binop(
+                    BinOp::Gt,
+                    Expr::plus(
+                        Expr::times(Expr::number(1), Expr::number(2)),
+                        Expr::number(3)),
+                    Expr::minus(
+                        Expr::number(5),
+                        Expr::number(6)))),
+        ]);
+
         assert_eq!(parse_str("f x y = 2 * x + y;").definitions_vec(), vec![
             &FunDefinition::new(
                 "f",
@@ -429,6 +530,48 @@ mod test {
                 )),
         ]);
 
+        assert_eq!(
+            parse_str("main = if 1 > 2 or 3 <= 4 then x mod 10 else a and b;").definitions_vec(),
+            vec![
+                &FunDefinition::new(
+                    "main",
+                    vec![],
+                    Expr::cond(
+                        Expr::binop(
+                            BinOp::Or,
+                            Expr::binop(
+                                BinOp::Gt,
+                                Expr::number(1),
+                                Expr::number(2)),
+                            Expr::binop(
+                                BinOp::Lte,
+                                Expr::number(3),
+                                Expr::number(4))),
+                        Expr::binop(
+                            BinOp::Mod,
+                            Expr::var("x"),
+                            Expr::number(10)),
+                        Expr::binop(
+                            BinOp::And,
+                            Expr::var("a"),
+                            Expr::var("b")))),
+            ]);
+
+        assert_eq!(
+            parse_str("f n = if n > 1 then 2 else 3;").definitions_vec(),
+            vec![
+                &FunDefinition::new(
+                    "f",
+                    vec!["n".to_string()],
+                    Expr::cond(
+                        Expr::binop(
+                            BinOp::Gt,
+                            Expr::var("n"),
+                            Expr::number(1)),
+                        Expr::number(2),
+                        Expr::number(3))),
+            ]);
+
         assert_eq!(parse_str("main = do f 1; g 2 end;").definitions_vec(), vec![
             &FunDefinition::new(
                 "main",
@@ -454,6 +597,15 @@ mod test {
                 vec!["x".to_string(), "y".to_string()],
                 vec![Some("Type1".to_string()), Some("Type2".to_string())],
                 Some("Type3".to_string()),
+                Expr::number(1))
+        ]);
+
+        assert_eq!(parse_str("f: Type = 1;").definitions_vec(), vec![
+            &FunDefinition::new_typed(
+                "f",
+                vec![],
+                vec![],
+                Some("Type".to_string()),
                 Expr::number(1))
         ]);
     }

@@ -7,6 +7,15 @@ pub enum BinOp {
     Plus,
     Minus,
     Times,
+    Div,
+    Mod,
+    Eq,
+    Gt,
+    Gte,
+    Lt,
+    Lte,
+    And,
+    Or,
 }
 
 #[derive(Debug, PartialEq)]
@@ -22,6 +31,9 @@ pub enum Expr {
 impl Expr {
     pub fn number(i: i32) -> Expr {
         Expr::Number(i)
+    }
+    pub fn binop(op: BinOp, l: Expr, r: Expr) -> Expr {
+        Expr::BinOp(op, Box::new(l), Box::new(r))
     }
     pub fn plus(l: Expr, r: Expr) -> Expr {
         Expr::BinOp(BinOp::Plus, Box::new(l), Box::new(r))

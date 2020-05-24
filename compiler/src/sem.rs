@@ -14,6 +14,7 @@ pub enum CallType {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Type {
     Int,
+    Bool,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -76,6 +77,7 @@ impl<T> AExpr<T> {
 
 impl<A> GFun<A> {
     pub fn signature(&self) -> &AFunSig { &self.0 }
+    pub fn signature_rc(&self) -> Rc<AFunSig> { Rc::clone(&self.0) }
     pub fn name(&self) -> &String       { &self.0.name }
     pub fn arity(&self) -> u8           { self.0.arity }
     pub fn code(&self) -> &GAST<A>      { &self.1 }
@@ -97,7 +99,7 @@ pub fn aprogram<A>(fs: Vec<Rc<GFun<A>>>) -> GProgram<A> {
     fs.into_iter().map(move |f| (f.0.name.clone(), Rc::clone(&f))).collect()
 }
 
-pub fn afun(name: &str, arg_types: Vec<Type>, return_type: Type, code: AAST) -> Rc<AFun> {
+pub fn afun<A>(name: &str, arg_types: Vec<Type>, return_type: Type, code: GAST<A>) -> Rc<GFun<A>> {
     let fd = AFunSig {
         name: name.to_string(),
         arity: arg_types.len() as u8,
@@ -262,6 +264,7 @@ fn parse_type(typename: &Option<String>) -> Result<Type, String> {
     match typename {
         Some(s) => match s.as_str() {
             "Int" => Ok(Int),
+            "Bool" => Ok(Bool),
             _ => Err(format!("unknown type {:?}", typename))
         }
         None => Ok(Int),
@@ -276,7 +279,7 @@ pub fn program_to_sem(p: &Program, runtime: &Vec<Rc<AFunSig>>) -> Result<AProgra
             name: f.fname.clone(),
             arity: f.arg_names.len() as u8,
             arg_types: f.arg_types.iter().map(parse_type).collect::<Result<Vec<Type>, String>>()?,
-            return_type: Type::Int,
+            return_type: parse_type(&f.return_type)?,
             native: false
         };
         funs.insert(f.fname.clone(), Rc::new(sig));
@@ -313,7 +316,7 @@ mod test {
         program_to_sem,
         aprogram, afun, aarg, abinop, acall, acond, anumber, aseq,
     };
-    use Type::Int;
+    use Type::{Int, Bool};
 
     fn get_rt() -> Vec<Rc<AFunSig>> {
         vec![
@@ -615,6 +618,28 @@ mod test {
                     afun("main",
                          vec![], Int,
                          acall("print", vec![anumber(1)], CallType::Native))
+                ])
+            )
+        );
+    }
+
+    #[test]
+    fn typed() {
+        assert_eq!(
+            program_to_sem(
+                &Program::new()
+                .define_typed(
+                    "f", vec!["x"],
+                    vec![Some("Bool".to_string())],
+                    Some("Bool".to_string()),
+                    Expr::var("x"))
+                .define("main", vec![], Expr::number(1)),
+                &get_rt(),
+            ),
+            Ok(
+                aprogram(vec![
+                    afun("f", vec![Bool], Bool, aarg(0)),
+                    afun("main", vec![], Int, anumber(1))
                 ])
             )
         );

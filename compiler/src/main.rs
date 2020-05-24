@@ -16,6 +16,7 @@ use serde::{Deserialize};
 use notmlc::lexer::{lex, trim_ws};
 use notmlc::parser::parse;
 use notmlc::sem::{Type, AFunSig, program_to_sem};
+use notmlc::typing::type_program;
 use notmlc::codegen::write_amd64;
 use notmlc::llvm::emit_ir;
 
@@ -184,6 +185,8 @@ fn main() -> std::io::Result<()> {
         base_path.clone()
     };
 
+    let runtime_defs = get_runtime_definitions();
+
     let lex_result = lex(&input);
     if verbose || lex_result.is_err() {
         println!("Tokens: {:?}", lex_result);
@@ -196,7 +199,7 @@ fn main() -> std::io::Result<()> {
             println!("Parse: {:#?}", res);
         }
         if let Ok(pt) = res {
-            let ares = program_to_sem(&pt, &get_runtime_definitions());
+            let ares = program_to_sem(&pt, &runtime_defs);
             if verbose || ares.is_err() {
                 println!("Sem: {:#?}", ares);
             }
@@ -213,15 +216,24 @@ fn main() -> std::io::Result<()> {
                             verbose)?;
                     }
                     Backend::LLVM => {
-                        let mut outstr = String::new();
-                        emit_ir(&at, &mut outstr, &get_runtime_definitions());
-                        let mut llvm_ir_file = File::create(&llvm_ir_path)?;
-                        llvm_ir_file.write_all(outstr.as_bytes())?;
+                        let tres = type_program(at, &runtime_defs);
+                        if verbose || tres.is_err() {
+                            println!("Typed: {:#?}", tres);
+                        }
 
-                        run_cmd(
-                            &config.llvm.llc_path,
-                            &llc_args(&config, &llvm_ir_path, &object_path),
-                            verbose)?;
+                        if let Ok(tt) = tres {
+                            let mut outstr = String::new();
+                            emit_ir(&tt, &mut outstr, &get_runtime_definitions());
+                            let mut llvm_ir_file = File::create(&llvm_ir_path)?;
+                            llvm_ir_file.write_all(outstr.as_bytes())?;
+
+                            run_cmd(
+                                &config.llvm.llc_path,
+                                &llc_args(&config, &llvm_ir_path, &object_path),
+                                verbose)?;
+                        } else {
+                            exit(1)
+                        }
                     }
                 }
                 run_cmd(

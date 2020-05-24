@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use crate::ast::BinOp;
 use crate::sem::{
     GAST, AAST, Type, AFunSig, AFun, AExpr, GFun, AProgram,
     map_program_functions, try_annotate,
@@ -18,54 +19,72 @@ fn assert_type(tree: &TAST, ty: &Type) -> Result<(), String> {
     if tree.expr_type() == *ty {
         Ok(())
     } else {
-        Err(format!("Expected {:?}, got {:?}", ty, tree.expr_type()))
+        Err(format!("Expected {:?}, got {:?}: {:?}", ty, tree.expr_type(), tree))
     }
 }
 
-pub fn type_expr(e: &AAST, sig: &AFunSig, p: &AProgram) -> Result<TAST, String> {
-    fn f(t: &AExpr<TAST>, sig: &AFunSig, p: &AProgram) -> Result<Type, String> {
-        use AExpr::*;
+pub fn type_expr(e: &AAST, sig: &AFunSig, funs: &HashMap<String, Rc<AFunSig>>) -> Result<TAST, String> {
+    
+    fn f(t: &AExpr<TAST>, sig: &AFunSig, funs: &HashMap<String, Rc<AFunSig>>) -> Result<Type, String> {
         use Type::*;
         let res = match t {
-            Number(_) => Int,
-            BinOp(_op, l, r) => {
-                assert_type(l, &Int)?;
-                assert_type(r, &Int)?;
-                Int
+            AExpr::Number(_) => Int,
+            AExpr::BinOp(op, l, r) => {
+                match op {
+                    BinOp::Plus | BinOp::Minus | BinOp::Times | BinOp::Div | BinOp::Mod => {
+                        assert_type(l, &Int)?;
+                        assert_type(r, &Int)?;
+                        Int
+                    }
+                    BinOp::Eq | BinOp::Gt | BinOp::Gte | BinOp::Lt | BinOp::Lte => {
+                        assert_type(l, &Int)?;
+                        assert_type(r, &Int)?;
+                        Bool
+                    }
+                    BinOp::And | BinOp::Or => {
+                        assert_type(l, &Bool)?;
+                        assert_type(r, &Bool)?;
+                        Bool
+                    }
+                }
             }
-            Call(fname, args, _call_type) => {
-                let called_fun = p.get(fname).unwrap();
-                if args.len() as u8 != called_fun.arity() {
+            AExpr::Call(fname, args, _call_type) => {
+                let called_fun = funs.get(fname).unwrap();
+                if args.len() as u8 != called_fun.arity {
                     return Err(format!(
                         "call to {} has {} arguments, expected {}",
-                        fname, args.len(), called_fun.arity()));
+                        fname, args.len(), called_fun.arity));
                 }
                 for (arg, ref fun_arg_type) in args.iter()
-                    .zip(called_fun.signature().arg_types.iter())
+                    .zip(called_fun.arg_types.iter())
                 {
                     assert_type(arg, fun_arg_type)?;
                 }
-                *called_fun.return_type()
+                called_fun.return_type
             }
-            Arg(i) => sig.arg_types[*i as usize],
-            Cond(cond, cons, alt) => {
-                assert_type(cond, &Int)?;
+            AExpr::Arg(i) => sig.arg_types[*i as usize],
+            AExpr::Cond(cond, cons, alt) => {
+                assert_type(cond, &Bool)?;
                 if cons.expr_type() != alt.expr_type() {
                     return Err("inconsistent consequent and alternative types".to_string())
                 }
                 cons.expr_type()
             }
-            Seq(exprs) => exprs.last().unwrap().expr_type(),
+            AExpr::Seq(exprs) => exprs.last().unwrap().expr_type(),
         };
         Ok(res)
     }
 
-    try_annotate(|t| f(t, sig, p), e)
+    try_annotate(|t| f(t, sig, funs), e)
 }
 
-pub fn type_program(prog: AProgram) -> Result<TProgram, String> {
+pub fn type_program(prog: AProgram, runtime: &Vec<Rc<AFunSig>>) -> Result<TProgram, String> {
+    let mut funs: HashMap<String, Rc<AFunSig>> = HashMap::new();
+    funs.extend(prog.values().map(|f| (f.name().clone(), f.signature_rc())));
+    funs.extend(runtime.iter().map(|fsig| (fsig.name.clone(), Rc::clone(fsig))));
+
     let typed_program = map_program_functions(
-        &|prog, fun: &AFun, expr| type_expr(expr, fun.signature(), prog),
+        &|_, fun: &AFun, expr| type_expr(expr, fun.signature(), &funs),
         prog)?;
 
     for fun in typed_program.values() {
@@ -78,13 +97,26 @@ pub fn type_program(prog: AProgram) -> Result<TProgram, String> {
 
 #[cfg(test)]
 mod test {
+    use std::rc::Rc;
     use crate::ast::BinOp;
     use crate::sem::{
-        Type, CallType,
+        Type, CallType, AFunSig,
         anumber, abinop, acall, aprogram, afun,
         gnumber, gbinop, gcall
     };
     use super::type_program;
+
+    fn get_rt() -> Vec<Rc<AFunSig>> {
+        vec![
+            Rc::new(AFunSig {
+                name: "print".to_string(),
+                arity: 1,
+                arg_types: vec![Type::Int],
+                return_type: Type::Int,
+                native: true
+            }),
+        ]
+    }
 
     #[test]
     fn typing() {
@@ -96,7 +128,7 @@ mod test {
                 CallType::Regular)),
         ]);
 
-        let result = type_program(prog).unwrap();
+        let result = type_program(prog, &get_rt()).unwrap();
 
         assert_eq!(
             result.get("bar").unwrap().code(),
