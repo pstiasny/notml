@@ -1,4 +1,6 @@
-fibrec n f1 f2 = if n then fibrec (n - 1) f2 (f1 + f2) else f2;
+fibrec n f1 f2 = if n > 0
+  then fibrec (n - 1) f2 (f1 + f2)
+  else f2;
 
 fib n = fibrec (n-2) 0 1;
 

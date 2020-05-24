@@ -1,5 +1,0 @@
-one = 1;
-double x = x * 2;
-double_then_add x y = (double x + x) + y;
-print x = 1;
-main = print(double_then_add (one) (11 - 1));
