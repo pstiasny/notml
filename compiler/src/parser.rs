@@ -9,7 +9,7 @@ use crate::ast::*;
 // L -> and | or
 // A -> Z K Z | Z
 // K -> > | < | >= | <= | ==
-// Z -> T + T | T - T | T
+// Z -> T + Z | T - Z | T
 // P -> do R* S end
 // R -> S ;
 // Q -> if S then S else S
@@ -125,36 +125,20 @@ fn v<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
         .or_backtrack(|| {v3(ts)})
 }
 
-fn t1<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
-    let (expr1, rest) = u(ts)?;
-    let (_, rest) = token(rest, TokenClass::Times)?;
-    let (expr2, rest) = t(rest)?;
-    Ok((Expr::times(expr1, expr2), rest))
-}
-
-fn t2<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
-    let (expr1, rest) = u(ts)?;
-    let (_, rest) = token(rest, TokenClass::Div)?;
-    let (expr2, rest) = t(rest)?;
-    Ok((Expr::binop(BinOp::Div, expr1, expr2), rest))
-}
-
-fn t3<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
-    let (expr1, rest) = u(ts)?;
-    let (_, rest) = token(rest, TokenClass::Mod)?;
-    let (expr2, rest) = t(rest)?;
-    Ok((Expr::binop(BinOp::Mod, expr1, expr2), rest))
-}
-
-fn t4<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
-    u(ts)
-}
-
 fn t<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
-    t1(ts)
-        .or_backtrack(|| {t2(ts)})
-        .or_backtrack(|| {t3(ts)})
-        .or_backtrack(|| {t4(ts)})
+    let (expr1, rest) = u(ts)?;
+
+    let op_res = token(rest, TokenClass::Times).map(|(_, rest)| (BinOp::Times, rest))
+    .or_backtrack(|| token(rest, TokenClass::Div).map(|(_, rest)| (BinOp::Div, rest)))
+    .or_backtrack(|| token(rest, TokenClass::Mod).map(|(_, rest)| (BinOp::Mod, rest)));
+    match op_res {
+        Ok((op, rest)) => {
+            let (expr2, rest) = t(rest)?;
+            let expr = Expr::binop(op, expr1, expr2);
+            Ok((expr, rest))
+        }
+        Err(_) => Ok((expr1, rest))
+    }
 }
 
 fn s1<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
@@ -165,23 +149,22 @@ fn s2<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
     q(ts)
 }
 
-fn s3<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
+fn s34<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
     let (expr1, rest) = a(ts)?;
-    let (op, rest) = l(rest)?;
-    let (expr2, rest) = a(rest)?;
-    let expr = Expr::binop(op, expr1, expr2);
-    Ok((expr, rest))
-}
-
-fn s4<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
-    a(ts)
+    match l(rest) {
+        Ok((op, rest)) => {
+            let (expr2, rest) = a(rest)?;
+            let expr = Expr::binop(op, expr1, expr2);
+            Ok((expr, rest))
+        }
+        Err(_) => Ok((expr1, rest))
+    }
 }
 
 fn s<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
     s1(ts)
         .or_backtrack(|| s2(ts))
-        .or_backtrack(|| s3(ts))
-        .or_backtrack(|| s4(ts))
+        .or_backtrack(|| s34(ts))
 }
 
 fn l<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, BinOp> {
@@ -189,20 +172,16 @@ fn l<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, BinOp> {
     .or_backtrack(|| token(ts, TokenClass::Or).map(|(_, rest)| (BinOp::Or, rest)))
 }
 
-fn a1<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
-    let (expr1, rest) = z(ts)?;
-    let (op, rest) = k(rest)?;
-    let (expr2, rest) = z(rest)?;
-    let expr = Expr::binop(op, expr1, expr2);
-    Ok((expr, rest))
-}
-
-fn a2<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
-    z(ts)
-}
-
 fn a<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
-    a1(ts).or_backtrack(|| a2(ts))
+    let (expr1, rest) = z(ts)?;
+    match k(rest) {
+        Ok((op, rest)) => {
+            let (expr2, rest) = z(rest)?;
+            let expr = Expr::binop(op, expr1, expr2);
+            Ok((expr, rest))
+        }
+        Err(_) => Ok((expr1, rest))
+    }
 }
 
 fn k<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, BinOp> {
@@ -213,29 +192,20 @@ fn k<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, BinOp> {
     .or_backtrack(|| token(ts, TokenClass::Eq).map(|(_, rest)| (BinOp::Eq, rest)))
 }
 
-fn z1<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
-    let (expr1, rest) = t(ts)?;
-    let (_, rest) = token(rest, TokenClass::Plus)?;
-    let (expr2, rest) = t(rest)?;
-    let expr = Expr::plus(expr1, expr2);
-    Ok((expr, rest))
-}
-
-fn z2<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
-    let (expr1, rest) = t(ts)?;
-    let (_, rest) = token(rest, TokenClass::Minus)?;
-    let (expr2, rest) = t(rest)?;
-    let expr = Expr::minus(expr1, expr2);
-    Ok((expr, rest))
-}
-
-fn z3<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
-    let expr = t(ts);
-    expr
-}
-
 fn z<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
-    z1(ts).or_backtrack(|| z2(ts)).or_backtrack(|| z3(ts))
+    let (expr1, rest) = t(ts)?;
+
+    let op_res = token(rest, TokenClass::Plus).map(|(_, rest)| (BinOp::Plus, rest))
+    .or_backtrack(|| token(rest, TokenClass::Minus).map(|(_, rest)| (BinOp::Minus, rest)));
+
+    match op_res {
+        Ok((op, rest)) => {
+            let (expr2, rest) = z(rest)?;
+            let expr = Expr::binop(op, expr1, expr2);
+            Ok((expr, rest))
+        }
+        Err(_) => Ok((expr1, rest))
+    }
 }
 
 fn p<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
@@ -464,6 +434,24 @@ mod test {
                 Expr::times(
                     Expr::number(1),
                     Expr::plus(Expr::number(2), Expr::number(3)))),
+        ]);
+
+        assert_eq!(parse_str("f = 1 + 2 + 3;").definitions_vec(), vec![
+            &FunDefinition::new(
+                "f",
+                vec![],
+                Expr::plus(
+                    Expr::number(1),
+                    Expr::plus(Expr::number(2), Expr::number(3)))),
+        ]);
+
+        assert_eq!(parse_str("f = 1 * 2 * 3;").definitions_vec(), vec![
+            &FunDefinition::new(
+                "f",
+                vec![],
+                Expr::times(
+                    Expr::number(1),
+                    Expr::times(Expr::number(2), Expr::number(3)))),
         ]);
 
         assert_eq!(parse_str("f = 1 * 2 + 3 > 5 - 6;").definitions_vec(), vec![
