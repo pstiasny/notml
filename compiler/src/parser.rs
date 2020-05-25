@@ -19,7 +19,7 @@ use crate::ast::*;
 // C -> sym V*
 
 #[derive(Debug, PartialEq)]
-pub struct ParseError(String, Position);
+pub struct ParseError(&'static str, Position);
 
 type ParseResult<'a, T> = Result<(T, &'a[Token<'a>]), ParseError>;
 
@@ -49,10 +49,7 @@ fn token<'a>(ts: &'a [Token<'a>], expected_tc: TokenClass) -> ParseResult<'a, &'
     if *tc == expected_tc {
         Ok((tstr, &ts[1..]))
     } else {
-        Err(
-            ParseError(
-                format!("unexpected token {} at line {} col {}", &tstr, &pos.0, &pos.1),
-                *pos))
+        Err(ParseError("unexpected token", *pos))
     }
 }
 
@@ -85,7 +82,7 @@ fn n<'a>(ts: &'a [Token<'a>]) -> ParseResult<'a, Expr> {
     let (i_str, rest) = token(ts, TokenClass::Number)?;
     match i_str.parse::<i32>() {
         Ok(i) => Ok((Expr::number(i), rest)),
-        Err(_) => Err(ParseError(format!("invalid integer: {:?}", i_str), position(ts))),
+        Err(_) => Err(ParseError("invalid integer", position(ts))),
     }
 }
 
@@ -604,9 +601,6 @@ mod test {
         trim_ws(&mut toks);
         assert_eq!(
             parse(&toks),
-            Err(
-                ParseError(
-                    "unexpected token ; at line 1 col 9".to_string(),
-                    Position(1, 9))));
+            Err(ParseError("unexpected token", Position(1, 9))));
     }
 }
