@@ -1,8 +1,11 @@
-make_list: Object = cons 1000 (cons 200 (cons 30 (cons 4 nil)));
+icons x tail: (Int * Object) -> Object = cons (box_int x) tail;
+ihead xs: (Object) -> Int = unbox_int (head xs);
+
+make_list: Object = icons 1000 (icons 200 (icons 30 (icons 4 nil)));
 
 sum xs acc: (Object * Int) -> Int =
   if is_nil xs
     then acc
-    else sum (tail xs) (acc + head xs);
+    else sum (tail xs) (acc + ihead xs);
 
 main = print (sum make_list 0);

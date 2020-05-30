@@ -1,11 +1,12 @@
 pub struct Cons {
-    head: i64,
+    head: *const Object,
     tail: *const Object,
 }
 
 pub enum Object {
     Cons(Cons),
-    Nil
+    Nil,
+    Integer(i64),
 }
 
 #[no_mangle]
@@ -30,8 +31,8 @@ pub extern fn rt_nil() -> *const Object {
 
 
 #[no_mangle]
-pub unsafe extern fn rt_is_nil(dv: *const Object) -> bool {
-    match *dv {
+pub unsafe extern fn rt_is_nil(objref: *const Object) -> bool {
+    match *objref {
         Object::Nil => true,
         _ => false,
     }
@@ -39,18 +40,15 @@ pub unsafe extern fn rt_is_nil(dv: *const Object) -> bool {
 
 
 #[no_mangle]
-pub extern fn rt_cons(value: i64, tail: *const Object) -> *const Object {
-    let ll = Box::new(Object::Cons(Cons {
-        head: value,
-        tail: tail,
-    }));
+pub extern fn rt_cons(head: *const Object, tail: *const Object) -> *const Object {
+    let ll = Box::new(Object::Cons(Cons { head, tail }));
     Box::into_raw(ll)
 }
 
 
 #[no_mangle]
-pub unsafe extern fn rt_head(dv: *const Object) -> i64 {
-    match *dv {
+pub unsafe extern fn rt_head(objref: *const Object) -> *const Object {
+    match *objref {
         Object::Cons(Cons { head, .. }) => head,
         _ => panic!("expected Cons"),
     }
@@ -58,9 +56,25 @@ pub unsafe extern fn rt_head(dv: *const Object) -> i64 {
 
 
 #[no_mangle]
-pub unsafe extern fn rt_tail(dv: *const Object) -> *const Object {
-    match *dv {
+pub unsafe extern fn rt_tail(objref: *const Object) -> *const Object {
+    match *objref {
         Object::Cons(Cons { tail, .. }) => tail,
         _ => panic!("expected Cons"),
+    }
+}
+
+
+#[no_mangle]
+pub extern fn rt_box_int(value: i64) -> *const Object {
+    let ll = Box::new(Object::Integer(value));
+    Box::into_raw(ll)
+}
+
+
+#[no_mangle]
+pub unsafe extern fn rt_unbox_int(objref: *const Object) -> i64 {
+    match *objref {
+        Object::Integer(x) => x,
+        _ => panic!("expected Integer"),
     }
 }

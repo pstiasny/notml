@@ -147,7 +147,7 @@ fn get_runtime_definitions() -> Vec<Rc<AFunSig>> {
         Rc::new(AFunSig {
             name: "cons".to_string(),
             arity: 2,
-            arg_types: vec![Type::Int, Type::Object],
+            arg_types: vec![Type::Object, Type::Object],
             return_type: Type::Object,
             native: true
         }),
@@ -155,7 +155,7 @@ fn get_runtime_definitions() -> Vec<Rc<AFunSig>> {
             name: "head".to_string(),
             arity: 1,
             arg_types: vec![Type::Object],
-            return_type: Type::Int,
+            return_type: Type::Object,
             native: true
         }),
         Rc::new(AFunSig {
@@ -163,6 +163,20 @@ fn get_runtime_definitions() -> Vec<Rc<AFunSig>> {
             arity: 1,
             arg_types: vec![Type::Object],
             return_type: Type::Object,
+            native: true
+        }),
+        Rc::new(AFunSig {
+            name: "box_int".to_string(),
+            arity: 1,
+            arg_types: vec![Type::Int],
+            return_type: Type::Object,
+            native: true
+        }),
+        Rc::new(AFunSig {
+            name: "unbox_int".to_string(),
+            arity: 1,
+            arg_types: vec![Type::Object],
+            return_type: Type::Int,
             native: true
         }),
     ]
