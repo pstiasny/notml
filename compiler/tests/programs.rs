@@ -1,3 +1,4 @@
+use std::env;
 use assert_cmd::Command;
 use tempfile::tempdir;
 
@@ -8,8 +9,12 @@ fn run_program(
 ) -> assert_cmd::assert::Assert {
     let binary_path = dir.path().join(prog_name);
 
+    let config_path = env::var("NOTML_TEST_CFG").unwrap();
+
     let mut compiler_cmd = Command::cargo_bin("notmlc").unwrap();
     let compiler_assert = compiler_cmd
+        .arg("-c")
+        .arg(config_path)
         .arg(&format!("../programs/{}.notml", prog_name))
         .arg("-o")
         .arg(&binary_path)

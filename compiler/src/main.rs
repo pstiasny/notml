@@ -34,7 +34,8 @@ struct AssemblerConfig {
 
 #[derive(Deserialize)]
 struct LinkerConfig {
-    ld_args: Vec<String>,
+    linker_path: String,
+    linker_args: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -106,8 +107,8 @@ fn linker_args<'a>(
     out_file: &'a str
 ) -> Vec<String> {
     let mut args: Vec<String> = Vec::new();
-    args.extend(cfg.linker.ld_args.clone());
     args.push(object_file.to_string());
+    args.extend(cfg.linker.linker_args.clone());
     args.push("-o".to_string());
     args.push(out_file.to_string());
     args
@@ -291,7 +292,7 @@ fn main() -> std::io::Result<()> {
                     }
                 }
                 run_cmd(
-                    "ld",
+                    &config.linker.linker_path,
                     &linker_args(&config, &object_path, &output_path),
                     verbose)?;
 

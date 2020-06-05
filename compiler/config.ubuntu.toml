@@ -1,0 +1,15 @@
+backend = "LLVM"
+
+[llvm]
+llc_path = "/usr/bin/llc"
+llc_args = []
+
+[assembler]
+nasm_args = ["-g"]
+
+[linker]
+linker_path = "gcc"
+linker_args = [
+    "../target/debug/libruntime.a",
+    "-lc", "-lpthread", "-ldl",
+]

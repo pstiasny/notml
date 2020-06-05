@@ -4,3 +4,4 @@ before_install:
 cache: cargo
 env:
   RUST_BACKTRACE: 1
+  NOTML_TEST_CFG: config.ubuntu.toml

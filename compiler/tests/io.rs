@@ -1,3 +1,4 @@
+use std::env;
 use std::io::{Write};
 use assert_cmd::Command;
 use tempfile::NamedTempFile;
@@ -6,10 +7,12 @@ use predicates::prelude::*;
 
 #[test]
 fn missing_source() {
+    let config_path = env::var("NOTML_TEST_CFG").unwrap();
+
     let mut compiler_cmd = Command::cargo_bin("notmlc").unwrap();
     let compiler_assert = compiler_cmd
         .arg("-c")
-        .arg("config.toml")
+        .arg(config_path)
         .arg("./NONEXISTENT")
         .assert();
     compiler_assert
