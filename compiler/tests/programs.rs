@@ -13,6 +13,7 @@ fn run_program(
         .arg(&format!("../programs/{}.notml", prog_name))
         .arg("-o")
         .arg(&binary_path)
+        .arg("-v")
         .assert();
     compiler_assert.success();
 
