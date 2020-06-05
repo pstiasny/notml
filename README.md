@@ -1,5 +1,7 @@
 # NotML
 
+[![Build Status](https://travis-ci.org/pstiasny/notml.svg?branch=master)](https://travis-ci.org/pstiasny/notml)
+
 Compiler and runtime for the toy NotML language.  Built with Rust and LLVM.
 
 
