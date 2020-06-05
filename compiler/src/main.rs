@@ -5,8 +5,8 @@ extern crate toml;
 extern crate serde;
 extern crate clap;
 
-use std::io::{Read, Write};
-use std::fs::File;
+use std::io::{Write};
+use std::fs::{File, read_to_string};
 use std::process::{Command, Stdio, exit};
 use std::rc::Rc;
 
@@ -114,7 +114,7 @@ fn linker_args<'a>(
 }
 
 
-fn get_runtime_definitions() -> Vec<Rc<AFunSig>> {
+fn get_runtime_declarations() -> Vec<Rc<AFunSig>> {
     vec![
         Rc::new(AFunSig {
             name: "print".to_string(),
@@ -207,16 +207,21 @@ fn main() -> std::io::Result<()> {
 
     let verbose = arg_matches.occurrences_of("verbose") > 0;
 
-    let mut config_str = String::new();
     let config_path = arg_matches.value_of("config").unwrap_or("config.toml");
-    let mut config_file = File::open(config_path)?;
-    config_file.read_to_string(&mut config_str)?;
-    let config: Config = toml::from_str(&config_str)?;
+    let config_str = read_to_string(&config_path).unwrap_or_else(|err| {
+        eprintln!("could not read config file: {}", err);
+        exit(1);
+    });
+    let config: Config = toml::from_str(&config_str).unwrap_or_else(|err| {
+        eprintln!("incorrect configuration: {}", err);
+        exit(1);
+    });
 
     let input_path: String = arg_matches.value_of("INPUT").unwrap().to_string();
-    let mut input_file = File::open(&input_path)?;
-    let mut input = String::new();
-    input_file.read_to_string(&mut input)?;
+    let input = read_to_string(&input_path).unwrap_or_else(|err| {
+        eprintln!("could not read source file: {}", err);
+        exit(1);
+    });
 
     let base_path = if let Some(s) = arg_matches.value_of("output") {
         s.to_string()
@@ -234,7 +239,7 @@ fn main() -> std::io::Result<()> {
         base_path.clone()
     };
 
-    let runtime_defs = get_runtime_definitions();
+    let runtime_defs = get_runtime_declarations();
 
     let lex_result = lex(&input);
     if verbose || lex_result.is_err() {
@@ -272,7 +277,7 @@ fn main() -> std::io::Result<()> {
 
                         if let Ok(tt) = tres {
                             let mut outstr = String::new();
-                            emit_ir(&tt, &mut outstr, &get_runtime_definitions());
+                            emit_ir(&tt, &mut outstr, &get_runtime_declarations());
                             let mut llvm_ir_file = File::create(&llvm_ir_path)?;
                             llvm_ir_file.write_all(outstr.as_bytes())?;
 
